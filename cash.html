@@ -350,9 +350,13 @@
       label = monthLabel(ym);
     } else if (p === "base") {
       const b = raw.fuelBase;
-      list = fuels.filter(f => String(f.date) >= b.date);
-      km = Math.max(sc.currentKm - (+b.km || 0), 0);
-      label = `с ${fmtDate(b.date)} (от ${km1(b.km)} км)`;
+      // Точка отсчёта = заправка до полного бака в день b.date. Литры берём по заправкам ПОСЛЕ неё,
+      // км — от следующего дня до дня последней заправки: топливо после неё ещё в баке, не сгорело.
+      list = fuels.filter(f => String(f.date) > b.date);
+      const last = list.reduce((m, f) => (!m || String(f.date) >= String(m.date)) ? f : m, null);
+      const next = UI.date.local(new Date(new Date(b.date + "T12:00:00").getTime() + 86400000));
+      km = last ? kmInRange(next, String(last.date)) : 0;
+      label = last ? `с ${fmtDate(b.date)} (до заправки ${fmtDate(last.date)})` : `с ${fmtDate(b.date)} (ждём следующую заправку)`;
     } else {
       list = fuels;
       km = Math.max(sc.currentKm - sc.startKm, 0);
@@ -369,6 +373,7 @@
     const fs = fuelStats(sc), raw = sc.raw || {};
     const wasOpen = $("fx_base") && $("fx_base").open;
     const ym = raw.fuelMonth || today().slice(0, 7);
+    const lastFuelDate = State.getFuel().reduce((m, f) => String(f.date) > m ? String(f.date) : m, "") || today();
     const btn = (p, t) => `<button class="${fs.p === p ? "on" : ""}" onclick="setFuelPeriod('${p}')">${t}</button>`;
     $("fuelBox").innerHTML = `
       <div class="box" style="border: 1px solid var(--border);">
@@ -385,10 +390,9 @@
         <details class="sub" id="fx_base">
           <summary>📍 Новая точка отсчёта</summary>
           <div class="sub-body">
-            <div class="hint" style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Расход и стоимость километра считаются с этой даты и этого пробега. Например, после полного бака или смены масла.</div>
+            <div class="hint" style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Укажите день, когда заправили бак до полного. Расход считается по заправкам после этого дня и километрам от следующего дня до последней заправки.</div>
             <div class="input-row">
-              <div><label>Дата</label><input type="date" id="fx_bd" class="form-control" value="${today()}"></div>
-              <div><label>Пробег, км</label><input type="number" id="fx_bk" class="form-control" inputmode="decimal" value="${Math.round(sc.currentKm * 10) / 10}"></div>
+              <div><label>Дата заправки до полного бака</label><input type="date" id="fx_bd" class="form-control" value="${lastFuelDate}"></div>
             </div>
             <button class="save-btn blue" onclick="saveFuelBase()">📍 ЗАДАТЬ ТОЧКУ ОТСЧЁТА</button>
           </div>
@@ -401,10 +405,8 @@
     try {
       const sc = scooterData(), raw = sc.raw || {};
       const date = $("fx_bd").value || today();
-      const km = UI.num($("fx_bk").value);
-      if (!(km > 0)) throw new Error("Укажите пробег");
-      pushUndo({ t: "fuelbase", label: `точка отсчёта ${fmtDate(date)} · ${km1(km)} км`, prev: { fuelBase: raw.fuelBase || null, fuelPeriod: raw.fuelPeriod || null } });
-      saveScooterData({ fuelBase: { date, km }, fuelPeriod: "base" });
+      pushUndo({ t: "fuelbase", label: `точка отсчёта ${fmtDate(date)}`, prev: { fuelBase: raw.fuelBase || null, fuelPeriod: raw.fuelPeriod || null } });
+      saveScooterData({ fuelBase: { date, km: sc.currentKm }, fuelPeriod: "base" });
       render();
       Notify.show("📍 Точка отсчёта задана");
     } catch (e) { Notify.error(e.message); }
@@ -820,14 +822,12 @@
 
     // Журнал пробега (последние 15 записей)
     const log = State.getMileageLog();
-    const legacyN = log.filter(e => e.trip == null).length; // прежний формат: в статистике учитывается, в журнале скрыт
-    const lastLog = log.filter(e => e.trip != null).slice(-15).reverse();
+    const lastLog = log.slice(-15).reverse();
     $("mileageJournal").innerHTML = lastLog.length ? lastLog.map(e => {
       const isNew = e.trip != null;
       return `<div class="svc-row"><div><b>${fmtDate(e.date)}</b><div class="svc-sub">${isNew ? (e.mode === "odo" ? "по одометру" : "за день") : "прежний формат"}${isNew ? "" : " · " + km1(e.km) + " км"}</div></div>
         <div class="svc-right"><b>${isNew ? "+" + km1(e.trip) + " км" : ""}</b>${isNew ? `<span class="svc-sub">→ ${km1(e.km)}</span><button class="del-btn" onclick="deleteTrip('${e.id}')">🗑</button>` : ""}</div></div>`;
     }).join("") : `<div class="empty-note">Записей пока нет. Нажмите «Пробег за день».</div>`;
-    if (legacyN) $("mileageJournal").insertAdjacentHTML("beforeend", `<div class="empty-note">Прежние записи (${legacyN}) скрыты, в статистике они учитываются</div>`);
 
     let historyHtml = "";
     fuels.map((f, i) => ({ f, i })).slice(-8).reverse().forEach(({ f, i }) => historyHtml += `<div class="history-item"><span>⛽ ${fmtDate(f.date)}</span><span><b>${money(fuelSum(f))} лей</b> (${(+f.liters || 0).toFixed(2)} л) <button class="del-btn" onclick="deleteFuel(${i})">🗑</button></span></div>`);
