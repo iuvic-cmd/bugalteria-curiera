@@ -1,0 +1,52 @@
+:root {
+  --bg: #f2f2f7;
+  --text: #1c1c1e;
+  --text-dim: #8e8e93;
+  --panel: #ffffff;
+  --border: #e5e5ea;
+  --accent: #007aff;
+  --green: #34c759;
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --purple: #af52de;
+
+  /* Фоны */
+  --red-bg: rgba(255, 59, 48, 0.12);
+  --help-bg: rgba(0, 122, 255, 0.10);
+  --subtle-bg: #f8f8fc;
+  --warn-bg: #fff4d6;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0a0f;
+  --text: #f2f2f7;
+  --text-dim: #8e8e93;
+  --panel: #1c1c1e;
+  --border: #2c2c2e;
+  --accent: #0a84ff;
+  --green: #30d158;
+  --red: #ff453a;
+  --orange: #ff9f0a;
+  --purple: #bf5af2;
+
+  /* Фоны для тёмной темы */
+  --red-bg: rgba(255, 69, 58, 0.15);
+  --help-bg: rgba(10, 132, 255, 0.15);
+  --subtle-bg: #2c2c2e;
+  --warn-bg: #2a1f0a;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+  /* padding-bottom задан в .container */
+}
