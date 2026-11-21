@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>⚙ Настройки</title>
+  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/components.css">
+  <style>
+    .container { max-width: 480px; margin: 0 auto; padding: 16px; padding-bottom: 90px; }
+    .header { margin-bottom: 20px; }
+    .header h1 { font-size: 24px; }
+    .card { background: var(--panel); border-radius: 16px; padding: 16px; margin-bottom: 16px; border: 1px solid var(--border); }
+    .card h3 { font-size: 16px; margin-bottom: 12px; color: var(--accent); }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 4px; }
+    .form-control { width: 100%; padding: 12px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text); font-size: 16px; }
+    .btn-save { width: 100%; padding: 14px; font-size: 16px; border-radius: 12px; background: var(--green); color: white; border: none; font-weight: 700; margin-top: 10px; cursor: pointer; }
+    .btn-blue { width: 100%; padding: 14px; font-size: 16px; border-radius: 12px; background: var(--accent); color: white; border: none; font-weight: 700; margin-top: 10px; cursor: pointer; }
+    .btn-danger { width: 100%; padding: 14px; font-size: 16px; border-radius: 12px; background: var(--red); color: white; border: none; font-weight: 700; margin-top: 10px; cursor: pointer; }
+    .hint { font-size: 13px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.5; }
+    .file-input { display: none; }
+    .file-label { display: block; padding: 14px; background: var(--accent); color: #fff; text-align: center; border-radius: 12px; font-weight: 700; cursor: pointer; margin-top: 10px; }
+    .btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .btn-sm-reset { padding: 12px; font-size: 13px; border-radius: 10px; border: none; font-weight: 600; cursor: pointer; color: #fff; }
+    .theme-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .theme-seg button { padding: 14px 6px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; line-height: 1.4; }
+    .theme-seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+    textarea { width: 100%; min-height: 100px; font-family: monospace; font-size: 12px; padding: 10px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); color: var(--text); margin-top: 8px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>⚙ Настройки</h1>
+  </div>
+
+  <!-- Тема -->
+  <div class="card">
+    <h3>🎨 Тема оформления</h3>
+    <div class="theme-seg" id="themeSeg">
+      <button data-mode="system" onclick="setTheme('system')">📱<br>Авто</button>
+      <button data-mode="light" onclick="setTheme('light')">☀️<br>Светлая</button>
+      <button data-mode="dark" onclick="setTheme('dark')">🌙<br>Тёмная</button>
+    </div>
+    <p class="hint" style="margin: 10px 0 0;">«Авто» повторяет настройку телефона. Выбор действует на всех страницах приложения.</p>
+  </div>
+
+  <!-- PIN -->
+  <div class="card">
+    <h3>🔐 PIN-код</h3>
+    <p class="hint" id="pinState"></p>
+    <div class="form-group">
+      <label>PIN (4 цифры)</label>
+      <input type="text" id="newPin" maxlength="4" inputmode="numeric" class="form-control" placeholder="0000">
+    </div>
+    <button class="btn-save" onclick="savePin()">💾 Включить / сменить PIN</button>
+    <button class="btn-danger" onclick="disablePin()">🔓 Выключить PIN</button>
+    <p class="hint" style="margin: 10px 0 0;">Это защита от случайного просмотра, а не шифрование.</p>
+  </div>
+
+  <!-- Тариф -->
+  <div class="card">
+    <h3>💰 Тариф</h3>
+    <div class="form-group">
+      <label>🌙 Ночной (лей)</label>
+      <input type="number" id="tariffNight" class="form-control" placeholder="74">
+    </div>
+    <div class="form-group">
+      <label>📦 Единый (лей)</label>
+      <input type="number" id="tariffAp" class="form-control" placeholder="54">
+    </div>
+    <div class="form-group">
+      <label>📅 Действует с</label>
+      <input type="date" id="tariffDate" class="form-control">
+    </div>
+    <button class="btn-save" onclick="saveTariff()">💾 Применить тариф</button>
+  </div>
+
+  <!-- Экспорт -->
+  <div class="card">
+    <h3>📤 Экспорт данных</h3>
+    <p class="hint">Полная копия всех данных приложения (учёт, финансы, скутер, план, настройки, PIN). Выберите формат.</p>
+    <div class="theme-seg" id="fmtSeg" style="grid-template-columns: repeat(2, 1fr);">
+      <button data-fmt="py" onclick="setFmt('py')">🐍 Текст<br>(Python)</button>
+      <button data-fmt="json" onclick="setFmt('json')">{ }<br>JSON</button>
+    </div>
+    <button class="btn-blue" onclick="downloadExport()">💾 Скачать файл</button>
+    <button class="btn-save" onclick="copyExport()">📋 Скопировать в буфер</button>
+    <button class="btn-save" style="background: var(--text-dim);" onclick="showExport()">👁 Показать текст</button>
+    <textarea id="exportBox" readonly style="display:none" placeholder="Здесь появится копия данных"></textarea>
+    <div id="exportStatus" class="hint" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- Импорт -->
+  <div class="card">
+    <h3>📥 Импорт данных</h3>
+    <p class="hint">Вставьте текст копии (Python-формат или JSON) или выберите файл. Формат определяется сам. Существующие данные с теми же ключами будут заменены. Перед импортом автоматически делается снимок.</p>
+    <textarea id="importBox" placeholder="Вставь копию данных сюда"></textarea>
+    <button class="btn-save" onclick="importFromText()">📥 Импортировать</button>
+
+    <label for="fileInput" class="file-label">📂 Выбрать файл</label>
+    <input type="file" id="fileInput" class="file-input" accept=".json,.txt,.py,text/plain,application/json" onchange="handleFile(this)">
+    <div id="importStatus" class="hint" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- Сброс -->
+  <div class="card" style="border-color: var(--red);">
+    <h3 style="color: var(--red);">⚠️ Сброс данных</h3>
+    <p class="hint">Выбери, что удалить. Действие необратимо. Сначала сделай экспорт.</p>
+    <div class="btn-grid">
+      <button class="btn-sm-reset" style="background: var(--orange);" onclick="resetSection('days')">📦 Дни и учёт</button>
+      <button class="btn-sm-reset" style="background: var(--accent);" onclick="resetSection('fin')">💼 Финансы</button>
+      <button class="btn-sm-reset" style="background: var(--purple);" onclick="resetSection('cash')">🛵 Скутер</button>
+      <button class="btn-sm-reset" style="background: var(--green);" onclick="resetSection('plan')">📋 План</button>
+      <button class="btn-sm-reset" style="background: var(--text-dim); grid-column: 1 / -1;" onclick="resetSection('settings')">⚙ Настройки</button>
+    </div>
+    <button class="btn-danger" onclick="resetAllData()" style="margin-top:20px;">🗑 Сбросить ВСЁ</button>
+  </div>
+</div>
+
+<nav class="tabbar">
+  <div class="in">
+    <a href="today.html"><span>🏠</span>Сегодня</a>
+<a href="index.html"><span>📦</span>Учёт</a>
+    <a href="fin.html"><span>💼</span>Финансы</a>
+    <a href="cash.html"><span>🛵</span>Скутер</a>
+    <a href="stats.html"><span>📈</span>Отчёты</a>
+    <a href="plan.html"><span>📋</span>План</a>
+    <a href="settings.html" class="active"><span>⚙</span>Настройки</a>
+  </div>
+</nav>
+
+<script src="js/lib/storage.js"></script>
+<script src="js/lib/ui.js"></script>
+<script src="js/lib/notify.js"></script>
+<script src="js/lib/theme.js"></script>
+<script src="js/lib/pin.js"></script>
+<script src="js/lib/backup.js"></script>
+<script src="js/domain/state.js"></script>
+<script src="js/domain/migrate.js"></script>
+<script>Schema.run();</script>
+<script src="js/domain/tariff.js"></script>
+<script>
+  Theme.init();
+  const PREFIX = "uchot.v2.";
+
+  // --- Тема ---
+  function refreshThemeButtons() {
+    const m = Theme.get();
+    document.querySelectorAll("#themeSeg button").forEach(b => b.classList.toggle("on", b.dataset.mode === m));
+  }
+  function setTheme(mode) { Theme.set(mode); refreshThemeButtons(); }
+  refreshThemeButtons();
+
+  // --- PIN ---
+  function refreshPin() {
+    document.getElementById("pinState").textContent =
+      AppStorage.get("pin_on", false) === true ? "PIN включён." : "PIN выключен. Введите 4 цифры и нажмите «Включить».";
+  }
+  function savePin() {
+    const pin = document.getElementById("newPin").value.trim();
+    if (!/^\d{4}$/.test(pin)) return Notify.error("PIN должен состоять из 4 цифр");
+    AppStorage.set("pin", pin);
+    AppStorage.set("pin_on", true);
+    try { sessionStorage.setItem("appUnlocked", "true"); } catch (e) {}
+    document.getElementById("newPin").value = "";
+    refreshPin();
+    Notify.show("✅ PIN включён");
+  }
+  function disablePin() {
+    if (!confirm("Выключить PIN-код?")) return;
+    AppStorage.set("pin_on", false);
+    refreshPin();
+    Notify.show("PIN выключен");
+  }
+  refreshPin();
+
+  // --- Тариф ---
+  function saveTariff() {
+    const night = parseInt(document.getElementById("tariffNight").value);
+    const ap = parseInt(document.getElementById("tariffAp").value);
+    const date = document.getElementById("tariffDate").value;
+    if (!(night > 0) || !(ap > 0)) return Notify.error("Введите цены");
+    if (!date) return Notify.error("Укажите дату");
+    Tariff.setNewRate(date, night, ap);
+    Notify.show(`✅ Тариф с ${date}: 🌙${night} / 📦${ap}`);
+  }
+
+  // --- Экспорт / импорт: Python-текст и JSON (сборка копии — в backup.js) ---
+  let exportFmt = "py";
+  try { exportFmt = localStorage.getItem("export_fmt") === "json" ? "json" : "py"; } catch (e) {}
+  function setFmt(f) {
+    exportFmt = f;
+    try { localStorage.setItem("export_fmt", f); } catch (e) {}
+    refreshFmt();
+    document.getElementById("exportBox").style.display = "none";
+  }
+  function refreshFmt() {
+    document.querySelectorAll("#fmtSeg button").forEach(b => b.classList.toggle("on", b.dataset.fmt === exportFmt));
+  }
+  refreshFmt();
+
+  // Литерал Python -> JSON (для импорта)
+  function decodePyStr(v) {
+    return v.replace(/\\([\s\S])/g, (m, c) => ({ n: "\n", t: "\t", r: "\r" })[c] || c);
+  }
+  function pyToJson(s) {
+    let o = "", seg = "", i = 0;
+    const flush = () => {
+      o += seg.replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false").replace(/\bNone\b/g, "null").replace(/,(\s*[}\]])/g, "$1");
+      seg = "";
+    };
+    while (i < s.length) {
+      const c = s[i];
+      if (c === "'" || c === '"') {
+        flush();
+        let j = i + 1, v = "";
+        while (j < s.length && s[j] !== c) {
+          if (s[j] === "\\" && j + 1 < s.length) { v += s[j] + s[j + 1]; j += 2; } else v += s[j++];
+        }
+        o += JSON.stringify(decodePyStr(v));
+        i = j + 1;
+      } else { seg += c; i++; }
+    }
+    flush();
+    return o;
+  }
+
+  const buildExport = () => Backup.build(exportFmt);
+
+  function setExportStatus(msg) { document.getElementById("exportStatus").textContent = msg; }
+
+  function downloadExport() {
+    const { text, count, ext, mime } = buildExport();
+    if (!count) return Notify.error("Нет данных для экспорта");
+    try {
+      const blob = new Blob([text], { type: mime + ";charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `uchot-backup-${UI.date.local()}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      Backup.mark();
+      setExportStatus(`Файл создан. Ключей: ${count}. Если загрузка не началась — используй «Скопировать».`);
+    } catch (e) {
+      Notify.error("Не удалось создать файл: " + e.message);
+    }
+  }
+
+  function showExport() {
+    const { text, count } = buildExport();
+    const box = document.getElementById("exportBox");
+    box.value = text;
+    box.style.display = "block";
+    setExportStatus(`Ключей: ${count}`);
+  }
+
+  function copyExport() {
+    const { text, count } = buildExport();
+    if (!count) return Notify.error("Нет данных для экспорта");
+    const box = document.getElementById("exportBox");
+    box.value = text;
+    box.style.display = "block";
+    const fallback = () => { box.select(); box.setSelectionRange(0, text.length); setExportStatus("Выдели текст и скопируй вручную."); };
+    try {
+      navigator.clipboard.writeText(text).then(
+        () => { Backup.mark(); Notify.show("✅ Скопировано"); setExportStatus(`Ключей: ${count}`); },
+        fallback
+      );
+    } catch (e) { fallback(); }
+  }
+
+  // Разбор копии: JSON ({"uchot.v2.ключ": ...}) или текст Python (ключ = значение)
+  function parseBackup(text) {
+    const t = text.trim();
+    const data = {}, failed = [];
+    if (t.startsWith("{")) {
+      const obj = JSON.parse(t);
+      for (const k in obj) if (k.startsWith(PREFIX)) data[k] = obj[k];
+      return { data, failed };
+    }
+    t.split(/\r?\n/).forEach(line => {
+      const m = line.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
+      if (!m) return;
+      try { data[PREFIX + m[1]] = JSON.parse(pyToJson(m[2].trim())); }
+      catch (e) { failed.push(m[1]); }
+    });
+    return { data, failed };
+  }
+
+  function importFromText() {
+    const text = document.getElementById("importBox").value.trim();
+    if (!text) return Notify.error("Вставь данные");
+    if (text.includes("# >>> ДАННЫЕ НАЧАЛО")) {
+      return Notify.error("Это копия из «Финансов». Импортируй её там: Финансы → Ещё → Импорт.");
+    }
+    try {
+      const { data, failed } = parseBackup(text);
+      const keys = Object.keys(data);
+      if (!keys.length) return Notify.error("В данных нет ключей приложения");
+      if (!confirm(`Заменить текущие данные? Будет записано ключей: ${keys.length}.`)) return;
+      Backup.snapshot();
+      keys.forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
+      const warn = failed.length ? ` Не разобрано: ${failed.join(", ")}.` : "";
+      document.getElementById("importStatus").textContent = `Импортировано ключей: ${keys.length}.${warn}`;
+      Notify.show(`✅ Импортировано ключей: ${keys.length}. Перезагрузка...`);
+      setTimeout(() => location.reload(), failed.length ? 3500 : 1000);
+    } catch (e) {
+      Notify.error("Ошибка разбора: " + e.message);
+    }
+  }
+
+  function handleFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      document.getElementById("importBox").value = e.target.result;
+      importFromText();
+    };
+    reader.readAsText(file);
+  }
+
+  // --- Сброс ---
+  function resetSection(section) {
+    const names = {
+      days: "Дни учёта (календарь, заказы, лог, закрытые месяцы зарплаты)",
+      fin: "Финансы (кошельки, операции, долги, кредиты)",
+      cash: "Скутер (пробег, заправки, ТО)",
+      plan: "План (месяцы, автозадачи, настройки плана)",
+      settings: "Настройки смен, подмоги, тариф, PIN"
+    };
+    if (!confirm(`Удалить раздел «${names[section]}»? Это необратимо.`)) return;
+    Backup.snapshot();
+
+    let keysToRemove = [];
+    if (section === "days") keysToRemove = ["days", "orders_log", "salary_closed"];
+    else if (section === "fin") keysToRemove = [
+      "wallets", "ops", "categories",
+      "traty", "dohody", "byudzhety", "celi", "dolgi", "regulyarnye", "kredity", "kartki",
+      "valyuty", "kursy", "lombard", "lombard_info", "aktivy", "arhiv",
+      "debts", "goals"
+    ];
+    else if (section === "cash") keysToRemove = ["scooter", "scooter_fuel", "mileage_log", "comp_oil", "comp_air_filter", "comp_belt", "comp_brakes", "scooter_expenses",
+      "official_tech", "official_tax", "official_insurance", "scooter_undo"];
+    else if (section === "plan") keysToRemove = ["plans", "plan", "plan_archive", "plan_cfg", "plan_auto_off"];
+    else if (section === "settings") keysToRemove = ["shift", "help", "roster", "tariff", "pin", "pin_on"];
+
+    keysToRemove.forEach(k => AppStorage.remove(k));
+    Notify.show(`✅ Раздел «${names[section]}» удален`);
+    setTimeout(() => location.reload(), 800);
+  }
+
+  function resetAllData() {
+    if (!confirm("ВНИМАНИЕ! Удалить ВСЕ данные приложения?")) return;
+    Backup.snapshot();
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith(PREFIX) && !key.startsWith(PREFIX + "snap_")) localStorage.removeItem(key);
+    });
+    alert("Данные удалены. Перезагрузка.");
+    location.reload();
+  }
+
+  // Инициализация тарифа
+  const rates = Tariff.getForDate(UI.date.local());
+  document.getElementById("tariffNight").value = rates.night;
+  document.getElementById("tariffAp").value = rates.ap;
+  document.getElementById("tariffDate").value = UI.date.local();
+</script>
+</body>
+</html>
