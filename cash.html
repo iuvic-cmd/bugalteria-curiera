@@ -820,12 +820,14 @@
 
     // Журнал пробега (последние 15 записей)
     const log = State.getMileageLog();
-    const lastLog = log.slice(-15).reverse();
+    const legacyN = log.filter(e => e.trip == null).length; // прежний формат: в статистике учитывается, в журнале скрыт
+    const lastLog = log.filter(e => e.trip != null).slice(-15).reverse();
     $("mileageJournal").innerHTML = lastLog.length ? lastLog.map(e => {
       const isNew = e.trip != null;
       return `<div class="svc-row"><div><b>${fmtDate(e.date)}</b><div class="svc-sub">${isNew ? (e.mode === "odo" ? "по одометру" : "за день") : "прежний формат"}${isNew ? "" : " · " + km1(e.km) + " км"}</div></div>
         <div class="svc-right"><b>${isNew ? "+" + km1(e.trip) + " км" : ""}</b>${isNew ? `<span class="svc-sub">→ ${km1(e.km)}</span><button class="del-btn" onclick="deleteTrip('${e.id}')">🗑</button>` : ""}</div></div>`;
     }).join("") : `<div class="empty-note">Записей пока нет. Нажмите «Пробег за день».</div>`;
+    if (legacyN) $("mileageJournal").insertAdjacentHTML("beforeend", `<div class="empty-note">Прежние записи (${legacyN}) скрыты, в статистике они учитываются</div>`);
 
     let historyHtml = "";
     fuels.map((f, i) => ({ f, i })).slice(-8).reverse().forEach(({ f, i }) => historyHtml += `<div class="history-item"><span>⛽ ${fmtDate(f.date)}</span><span><b>${money(fuelSum(f))} лей</b> (${(+f.liters || 0).toFixed(2)} л) <button class="del-btn" onclick="deleteFuel(${i})">🗑</button></span></div>`);
