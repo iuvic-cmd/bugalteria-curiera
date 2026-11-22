@@ -291,6 +291,26 @@
         return { plan, fact, count, covered, diff: fact - plan, left: open.reduce((a, t) => a + t.left, 0), open };
     }
 
+    // Ломбард: проценты за месяц ym и сколько уже оплачено. Переплата процентов переходит на следующие месяцы.
+    // proc_ym / proc_sum в lombard_info = последний месяц, в котором платили, и сумма процентов, оплаченная к нему.
+    function lombard(ym) {
+        ym = ym || curYm();
+        const lo = (AppStorage.get("lombard", []) || []).filter(b => +b.ostatok > 0.005);
+        const info = AppStorage.get("lombard_info", {}) || {};
+        const base = lo.reduce((a, b) => a + (+b.summa || 0), 0);
+        const pm = Math.round(base * (+info.stavka || 0)) / 100;
+        let m = String(info.proc_ym || ""), sum = m ? (+info.proc_sum || 0) : 0, n = 0;
+        while (m && m < ym && n++ < 600) {
+            sum = Math.max(0, Math.round((sum - pm) * 100) / 100);
+            const p = m.split("-").map(Number), d = new Date(p[0], p[1], 1);
+            m = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+        }
+        if (m > ym) sum = 0;
+        const r2 = x => Math.round(x * 100) / 100;
+        return { ym, hasLoan: lo.length > 0, base, rate: +info.stavka || 0, den: +info.den || 0, pm, paid: sum,
+            due: Math.max(0, r2(pm - sum)), ahead: Math.max(0, r2(sum - pm)) };
+    }
+
     // Платежи из «Финансов», которые пора внести (кредиты, карты, ломбард, регулярные траты)
     function paymentsDue() {
         const now = new Date(), ym = curYm(), dom = now.getDate(), dim = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -303,8 +323,7 @@
             .forEach(c => out.push({ icon: "💳", title: c.nazvanie, sum: +c.min > 0 ? Math.min(+c.min, +c.dolg) : +c.dolg, den: +c.den, late: late(+c.den) }));
         const lo = (AppStorage.get("lombard", []) || []).filter(b => +b.ostatok > 0.005);
         const info = AppStorage.get("lombard_info", {}) || {};
-        const pm = Math.round(lo.reduce((a, b) => a + (+b.summa || 0), 0) * (+info.stavka || 0)) / 100;
-        const due = Math.max(0, Math.round((pm - (info.proc_ym === ym ? (+info.proc_sum || 0) : 0)) * 100) / 100);
+        const due = lombard(ym).due;
         if (lo.length && due > 0 && near(+info.den, 5)) out.push({ icon: "🥇", title: "Ломбард: проценты", sum: due, den: +info.den, late: late(+info.den) });
         (AppStorage.get("regulyarnye", []) || []).filter(r => r.tip === "Трата" && r.posl !== ym && near(+r.den, 3))
             .forEach(r => out.push({ icon: "🔁", title: r.nazvanie, sum: +r.summa || 0, den: +r.den, late: late(+r.den) }));
@@ -314,6 +333,6 @@
     // Список всех возможных автозадач скутера (для настроек плана)
     const scItems = () => SC_COMPONENTS.map(c => ({ id: "sc_comp_" + c.id, title: c.title })).concat(SC_OFFICIALS.map(o => ({ id: "sc_off_" + o.id, title: o.title })));
 
-    global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems,
+    global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems, lombard,
         planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue };
 })(window);
