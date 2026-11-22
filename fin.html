@@ -63,8 +63,8 @@ try{Theme.init()}catch(e){}
    kohelki→State wallets, istorija→State ops,
    kat_trat/kat_dohodov→State categories {expense,income},
    остальные → AppStorage с тем же именем.
+   Экспорт, импорт, снимки и сброс — только в «Настройках» (backup.js).
    ============================================================ */
-const KEYS=["kohelki","kat_trat","kat_dohodov","traty","dohody","istorija","byudzhety","celi","dolgi","regulyarnye","kredity","valyuty","kursy","lombard","lombard_info","aktivy","arhiv","kartki"];
 const APP_KEYS=["traty","dohody","byudzhety","celi","dolgi","kredity","kartki","aktivy","kursy","valyuty","regulyarnye","lombard","lombard_info"];
 const DEF=()=>({kohelki:{"Наличные":0,"Карта":0},kat_trat:["Продукты","Транспорт","Развлечения","Жильё","Коммуналка","Связь","Здоровье","Одежда","Кафе","Прочее"],kat_dohodov:["Зарплата","Подарки","Прочее"],traty:{},dohody:{},istorija:[],byudzhety:{},celi:{},dolgi:[],regulyarnye:[],kredity:[],valyuty:{},kursy:{},lombard:[],lombard_info:{stavka:3,den:25,koshel:"Наличные",proc_ym:"",proc_sum:0},aktivy:[],arhiv:{},kartki:[]});
 const clone=x=>JSON.parse(JSON.stringify(x));
@@ -180,7 +180,7 @@ function submit(tip){
 /* ---- операции ---- */
 function row(z){
   const ic={"Трата":"➖","Доход":"➕","Перевод":"🔄","Конвертация":"🔄","Кредитка":"💳","Долг":"🤝","Кредит":"🏛","Ломбард":"🥇","Цель":"🎯"}[z.tip]||"•";
-  const kp=z.tip==="Кредитка"&&(z.napr==="покупка"||z.napr==="проценты"),neg=z.tip==="Трата"||kp;
+  const kp=(z.tip==="Кредитка"&&(z.napr==="покупка"||z.napr==="проценты"))||((z.tip==="Кредит"||z.tip==="Ломбард")&&z.napr==="платёж"),neg=z.tip==="Трата"||kp;
   const sg=neg?"-":z.tip==="Доход"?"+":"",c=neg?"r":z.tip==="Доход"?"g":"",w=z.koshel||"",ttl=z.kat||(z.kuda?w+" → "+z.kuda:z.tip);
   return `<div class="row" onclick="opMenu(${z.id})"><div>${ic} ${esc(ttl)}<div class="mut">${esc((z.data||"").slice(0,16))} · ${esc(w)}${z.zametka?" · "+esc(z.zametka):""}</div></div><b class="${c}">${sg}${fmt(z.summa)} ${esc(SY[cur(w)]||"")}</b></div>`}
 function opMenu(id){const z=ops().find(x=>x.id===id),it=[];if(!z)return;
@@ -188,6 +188,7 @@ function opMenu(id){const z=ops().find(x=>x.id===id),it=[];if(!z)return;
   if(z.tip==="Трата"||z.tip==="Доход")it.push(["✏️ Изменить",()=>editOp(id)]);
   if(["Трата","Доход","Перевод","Корректировка"].includes(z.tip))it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию?",()=>undo(id))]);
   if(z.tip==="Кредитка")it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию?",()=>undoCard(id))]);
+  if(["Кредит","Ломбард","Долг","Цель","Конвертация"].includes(z.tip))it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию? Деньги и остаток вернутся.",()=>undo(id))]);
   if(it.length)mm(esc(z.tip)+" · "+fmt(z.summa),it)}
 function editOp(id){const z=ops().find(x=>x.id===id),L=z.tip==="Трата"?S.kat_trat:S.kat_dohodov;
   mini("Изменить",[["k","Категория",L.includes(z.kat)?L:L.concat(z.kat),z.kat],["s","Сумма",null,z.summa,1],["d","Дата",null,(z.data||"").slice(0,10),0,"date"],["w","Кошелёк",W(),z.koshel],["n","Заметка",null,z.zametka||""]],v=>{
@@ -260,43 +261,12 @@ function sect(){
     <button class="bt" onclick="go('reg')">🔁 Регулярные платежи</button>
     <button class="bt" onclick="go('asset')">🏺 Активы</button>
     <button class="bt" onclick="go('cat')">🗂 Категории</button>
-    <button class="bt" onclick="rst()">🗑 Сбросить всё</button>
+    <button class="bt" onclick="location.href='settings.html'">⚙ Копия, импорт и сброс данных → Настройки</button>
   </div>`}
 function more(){
   return innerNav()+
-  `<div class="card"><button class="bt pri" onclick="go('hist')">🕘 История</button><button class="bt" onclick="rst()">🗑 Сбросить всё</button></div>
-  <div class="card"><h2>Импорт данных</h2><div class="mut">Вставь содержимое data.json или блок «Экспорт» из старой версии.</div><textarea id="imp" placeholder="Вставь сюда"></textarea><button class="bt pri" onclick="doImp()">Импортировать</button></div>
-  <div class="card"><h2>Экспорт / резервная копия</h2><button class="bt" onclick="doExp()">Показать данные</button><textarea id="exp" readonly style="display:none"></textarea><button class="bt" id="cp" style="display:none" onclick="doCp()">Скопировать</button></div>`}
-
-/* ---- экспорт / импорт ---- */
-function py(v){if(v==null)return"None";if(v===true)return"True";if(v===false)return"False";if(typeof v==="number")return String(v);if(typeof v==="string")return"'"+v.replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g,"\\n")+"'";if(Array.isArray(v))return"["+v.map(py).join(", ")+"]";return"{"+Object.keys(v).map(k=>py(k)+": "+py(v[k])).join(", ")+"}"}
-function pyExp(){return"# >>> ДАННЫЕ НАЧАЛО\n"+KEYS.map(k=>k+" = "+py(S[k])).join("\n")+"\n# <<< ДАННЫЕ КОНЕЦ"}
-function doExp(){const e=$("exp");e.value=pyExp();e.style.display="block";$("cp").style.display="block"}
-function doCp(){const e=$("exp");e.select();try{navigator.clipboard.writeText(e.value).then(()=>toast("Скопировано"),()=>toast("Скопируй вручную"))}catch(x){toast("Скопируй вручную")}}
-function pyj(s){
-  let o="",seg="",i=0;
-  const fl=()=>{o+=seg.replace(/\bTrue\b/g,"true").replace(/\bFalse\b/g,"false").replace(/\bNone\b/g,"null").replace(/,(\s*[}\]])/g,"$1");seg=""};
-  while(i<s.length){const c=s[i];
-    if(c==="'"||c==='"'){fl();let j=i+1,v="";
-      while(j<s.length&&s[j]!==c){if(s[j]==="\\"&&j+1<s.length){v+=s[j]+s[j+1];j+=2}else v+=s[j++]}
-      let d;try{d=JSON.parse('"'+v.replace(/\\'/g,"'").replace(/(^|[^\\])"/g,'$1\\"')+'"')}catch(e){d=v}
-      o+=JSON.stringify(d);i=j+1}else{seg+=c;i++}}
-  fl();return o}
-function fromCode(t){
-  const a=t.indexOf("# >>> ДАННЫЕ НАЧАЛО"),b=t.indexOf("# <<< ДАННЫЕ КОНЕЦ");
-  const blk=(a>=0&&b>a?t.slice(a,b):t).replace(/^\s*#.*$/gm,"");
-  const re=/^(\w+)\s*=\s*/gm,ms=[];let m;while((m=re.exec(blk)))ms.push([m[1],m.index+m[0].length,m.index]);
-  const o={};ms.forEach((x,k)=>{if(!KEYS.includes(x[0]))return;const e=k+1<ms.length?ms[k+1][2]:blk.length;
-    try{o[x[0]]=JSON.parse(pyj(blk.slice(x[1],e).trim()))}catch(e2){}});return o}
-function doImp(){
-  const t=$("imp").value.trim();if(!t)return toast("Сначала вставь данные");
-  let d;try{d=JSON.parse(t)}catch(e){d=fromCode(t)}
-  if(!d||!d.kohelki||typeof d.kohelki!=="object")return toast("Не удалось распознать данные");
-  ask("Заменить текущие данные импортированными?",()=>{
-    const n=DEF();KEYS.forEach(k=>{if(k in d)n[k]=d[k]});S=n;BASE={};save();
-    if(Object.keys(S.arhiv||{}).length)AppStorage.set("arhiv",S.arhiv);
-    AppStorage.remove("schema");Schema.run();load();tab="home";render();toast("Импортировано")})}
-function rst(){mini("Сброс всех данных",[["c","Введи СБРОС"]],v=>{if(v.c.toUpperCase()!=="СБРОС")throw"Нужно ввести СБРОС";S=DEF();BASE={};tab="home"},"Удалит всё: историю, долги, кредиты, ломбард. Сначала сделай экспорт!")}
+  `<div class="card"><button class="bt pri" onclick="go('hist')">🕘 История</button></div>
+  <div class="card"><h2>Копия данных</h2><div class="mut">Экспорт, импорт, откат из снимка и сброс данных — в одном месте: «Настройки». Там же копия всех разделов приложения.</div><button class="bt pri" style="margin-top:8px" onclick="location.href='settings.html'">⚙ Открыть Настройки</button></div>`}
 
 /* ---- бюджеты ---- */
 function bud(){const ym=nowS().slice(0,7),sp=k=>r2(ops().filter(z=>z.tip==="Трата"&&z.kat===k&&(z.data||"").startsWith(ym)).reduce((a,z)=>a+(z.baz??z.summa),0));
@@ -368,7 +338,7 @@ function rep(){
 /* ---- кредиты и ломбард ---- */
 function cred(){const ym=nowS().slice(0,7),lo=S.lombard.filter(b=>b.ostatok>0);
   return innerNav()+back("Кредиты и ломбард")+`<div class="card"><h2>Кредиты (нажми — платёж)</h2>${S.kredity.filter(k=>k.ostatok>0).map(k=>`<div class="row" onclick="payK(${k.id})"><div>🏛 ${esc(k.nazvanie)}<div class="mut">платёж ${fmt(k.plat)} · ${k.den}-го · ${k.stavka}%${k.posl===ym?" · ✅ оплачен":""}</div></div><b>${fmt(k.ostatok)}</b></div>`).join("")||'<div class="mut">Нет</div>'}<button class="bt" onclick="newK()">➕ Кредит</button></div>
-<div class="card"><h2>Ломбард: ${S.lombard_info.stavka}%/мес = ${fmt(lo.reduce((a,b)=>a+b.summa,0)*S.lombard_info.stavka/100)}</h2>${lo.map(b=>`<div class="row" style="cursor:default"><span>🥇 ${esc(b.nazvanie)}</span><b>${fmt(b.ostatok)}</b></div>`).join("")||'<div class="mut">Нет</div>'}<div class="two" style="margin-top:6px"><div><button class="bt" onclick="newL()">➕ Ломбард</button></div><div><button class="bt pri" onclick="payL()">Внести платёж</button></div></div></div>`}
+<div class="card"><h2>Ломбард: ${S.lombard_info.stavka}%/мес = ${fmt(lo.reduce((a,b)=>a+b.summa,0)*S.lombard_info.stavka/100)}</h2>${lo.map(b=>`<div class="row" style="cursor:default"><span>🥇 ${esc(b.nazvanie)}</span><b>${fmt(b.ostatok)}</b></div>`).join("")||'<div class="mut">Нет</div>'}<div class="mut">${(()=>{const lb=Calc.lombard(ym);return lb.hasLoan?(lb.due>0?"К оплате за этот месяц: "+fmt(lb.due):"Проценты за этот месяц оплачены"+(lb.ahead>0?" · вперёд на "+fmt(lb.ahead)+" лей":"")):""})()}</div><div class="two" style="margin-top:6px"><div><button class="bt" onclick="newL()">➕ Ломбард</button></div><div><button class="bt pri" onclick="payL()">Внести платёж</button></div></div></div>`}
 function payK(id){const k=S.kredity.find(x=>x.id===id);
   mini("Платёж: "+esc(k.nazvanie),[["w","Кошелёк",WM(),k.koshel],["s","Сумма",null,k.plat,1]],v=>{FinanceAPI.payCredit({creditId:id,wallet:v.w,amount:v.s});load()})}
 function newK(){mini("Новый кредит",[["n","Название"],["p","Платёж в месяц",null,"",1],["d","День (1-31)",null,"",1],["s","Ставка % годовых",null,"",1],["o","Остаток",null,"",1],["w","Кошелёк",W(),"Наличные"]],v=>{
@@ -376,9 +346,18 @@ function newK(){mini("Новый кредит",[["n","Название"],["p","�
   if(!v.n)throw"Название";if(!(p>0))throw"Платёж > 0";if(!(d>=1&&d<=31))throw"День 1-31";if(!(o>=0))throw"Остаток >= 0";
   S.kredity.push({id:mid(S.kredity),nazvanie:v.n,plat:p,den:d,stavka:s,ostatok:o,koshel:v.w,posl:""})})}
 function newL(){mini("Новый ломбард",[["n","Название"],["s","Сумма займа",null,"",1]],v=>{const s=pos(v.s);if(!v.n)throw"Название";S.lombard.push({id:mid(S.lombard),nazvanie:v.n,summa:s,ostatok:s})})}
-function payL(){const ym=nowS().slice(0,7),I=S.lombard_info,LO=()=>S.lombard.filter(b=>b.ostatok>0.005),
-  pm=r2(LO().reduce((a,b)=>a+b.summa,0)*I.stavka/100),due=Math.max(0,r2(pm-(I.proc_ym===ym?I.proc_sum:0))),tot=r2(LO().reduce((a,b)=>a+b.ostatok,0));
-  mini("Платёж по ломбарду",[["w","Кошелёк",WM(),I.koshel],["s","Сумма (макс. "+fmt(r2(due+tot))+")",null,due||"",1]],v=>{FinanceAPI.payLombard({wallet:v.w,amount:v.s});load()},"Проценты к оплате в этом месяце: "+fmt(due))}
+function payL(){
+  const ym=nowS().slice(0,7),I=S.lombard_info,st=Calc.lombard(ym);
+  if(!S.lombard.some(b=>b.ostatok>0.005))return toast("Нет открытых займов");
+  const T1="Только проценты (тело не трогаем)",T2="Проценты + тело долга",
+  tot=r2(S.lombard.filter(b=>b.ostatok>0.005).reduce((a,b)=>a+b.ostatok,0));
+  const hint="Проценты за месяц: "+fmt(st.pm)+" · оплачено за этот месяц: "+fmt(st.paid)+(st.ahead>0?" · вперёд на "+fmt(st.ahead)+" лей":"")+(st.due>0?" · к оплате: "+fmt(st.due):"")+" · долг: "+fmt(tot);
+  mini("Платёж по ломбарду",[["w","Кошелёк",WM(),I.koshel],["t","Что платим",[T1,T2],T1],["k","За сколько месяцев процентов",null,"1",1,"number"],["s","Сумма",null,r2(Math.max(0,st.pm-st.paid))||"",1]],v=>{
+    FinanceAPI.payLombard({wallet:v.w,amount:v.s,mode:v.t===T1?"interest":"full",months:v.k});load()},hint);
+  const upd=()=>{const only=$("m_t").value===T1,k=Math.max(1,Math.round(num($("m_k").value))||1);
+    $("m_k").style.display=only?"block":"none";$("m_k").previousElementSibling.style.display=only?"block":"none";
+    $("m_s").value=only?(r2(Math.max(0,st.pm*k-st.paid))||""):(st.due||"")};
+  $("m_t").onchange=upd;$("m_k").oninput=upd;upd()}
 
 /* ---- активы ---- */
 function asset(){return innerNav()+back("Активы")+`<div class="card">${S.aktivy.map((a,i)=>`<div class="row" onclick="chA(${i})"><span>🏺 ${esc(a.nazvanie)}</span><b>${fmt(a.ocenka)}</b></div>`).join("")||'<div class="mut">Активов нет</div>'}</div><button class="bt pri" onclick="chA(-1)">Добавить актив</button>`}
