@@ -208,31 +208,38 @@
             const pr = Math.min(s, UI.r2(k.ostatok * k.stavka / 1200)), os = UI.r2(Math.min(k.ostatok, s - pr));
             s = UI.r2(pr + os);
             if (ws[wallet] < s) throw new Error("Недостаточно средств");
+            const pp = k.posl;
             ws[wallet] = UI.r2(ws[wallet] - s); k.ostatok = UI.r2(k.ostatok - os); k.posl = this._ym();
             State.setWallets(ws); AppStorage.set("kredity", ks);
-            return this._rec("Кредит", s, wallet, { date, kat: k.nazvanie, napr: "платёж", osn: os, proc: pr });
+            return this._rec("Кредит", s, wallet, { date, kat: k.nazvanie, napr: "платёж", osn: os, proc: pr, cid: k.id, pp });
         },
-        payLombard({ date, wallet, amount }) {
+        // mode "interest": только проценты (за months месяцев), тело не трогаем.
+        // mode "full" (по умолчанию): сначала проценты за текущий месяц, остаток — в тело долга.
+        payLombard({ date, wallet, amount, mode, months }) {
             const ym = this._ym(), lomb = AppStorage.get("lombard", []) || [];
             const I = AppStorage.get("lombard_info", { stavka: 3, den: 25, koshel: "Наличные", proc_ym: "", proc_sum: 0 });
             const LO = () => lomb.filter(b => b.ostatok > 0.005);
-            const pm = UI.r2(LO().reduce((a, b) => a + b.summa, 0) * I.stavka / 100);
-            const due = Math.max(0, UI.r2(pm - (I.proc_ym === ym ? I.proc_sum : 0)));
+            if (!LO().length) throw new Error("Нет открытых займов");
+            const st = Calc.lombard(ym), only = mode === "interest";
+            const k = Math.max(1, Math.round(UI.num(months)) || 1);
             const tot = UI.r2(LO().reduce((a, b) => a + b.ostatok, 0));
-            const s = Math.min(this._pos(amount), UI.r2(due + tot)), ws = this._wallets(wallet);
+            let s = this._pos(amount);
+            if (!only) s = Math.min(s, UI.r2(st.due + tot));
+            const ws = this._wallets(wallet);
             if (ws[wallet] < s) throw new Error("Недостаточно средств");
-            const pr = Math.min(s, due); let rest = UI.r2(s - pr); const det = [];
-            LO().forEach(b => {
+            const pi = { proc_ym: I.proc_ym || "", proc_sum: +I.proc_sum || 0 };
+            const pr = only ? s : Math.min(s, st.due); let rest = UI.r2(s - pr); const det = [];
+            if (!only) LO().forEach(b => {
                 if (rest <= 0) return;
                 const x = Math.min(rest, b.ostatok);
                 b.ostatok = UI.r2(b.ostatok - x); rest = UI.r2(rest - x); det.push([b.id, x]);
                 if (b.ostatok <= 0.005) b.ostatok = 0;
             });
             ws[wallet] = UI.r2(ws[wallet] - s);
-            if (I.proc_ym !== ym) { I.proc_ym = ym; I.proc_sum = 0; }
-            I.proc_sum = UI.r2(I.proc_sum + pr);
+            I.proc_ym = ym; I.proc_sum = UI.r2(st.paid + pr);
             State.setWallets(ws); AppStorage.set("lombard", lomb); AppStorage.set("lombard_info", I);
-            return this._rec("Ломбард", s, wallet, { date, kat: "Ломбард", napr: "платёж", osn: UI.r2(s - pr), proc: pr, det });
+            return this._rec("Ломбард", s, wallet, { date, kat: "Ломбард", napr: "платёж", osn: UI.r2(s - pr), proc: pr, det,
+                mes: only ? k : undefined, pi, zametka: only ? "проценты" + (k > 1 ? " за " + k + " мес." : "") : undefined });
         },
 
         // --- Долги людям ---
@@ -276,6 +283,79 @@
             return this._rec("Цель", s, wallet, { date, kat: goal, napr: inn ? "in" : "out" });
         },
 
+        // --- Откаты: кредит, ломбард, долг, цель, конвертация ---
+        _op(opId) { const ops = State.getOps(), z = ops.find(x => String(x.id) === String(opId)); return { ops, z }; },
+        _drop(ops, z) { ops.splice(ops.indexOf(z), 1); State.setOps(ops); },
+        undoCredit(opId) {
+            const { ops, z } = this._op(opId); if (!z) return false;
+            const ks = AppStorage.get("kredity", []) || [];
+            const k = ks.find(x => z.cid != null ? x.id === z.cid : x.nazvanie === z.kat) || ks.find(x => x.nazvanie === z.kat);
+            if (!k) throw new Error("Кредит удалён — отменить платёж нельзя");
+            if (ops.some(o => +o.id > +z.id && o.tip === "Кредит" && o.napr === "платёж" && (o.cid != null ? o.cid === k.id : o.kat === k.nazvanie)))
+                throw new Error("Сначала отмените более поздний платёж по этому кредиту");
+            const ws = this._wallets(z.koshel);
+            ws[z.koshel] = UI.r2(ws[z.koshel] + (+z.summa || 0));
+            k.ostatok = UI.r2(k.ostatok + (+z.osn || 0));
+            k.posl = z.pp != null ? z.pp : (k.posl === String(z.data).slice(0, 7) ? "" : k.posl);
+            State.setWallets(ws); AppStorage.set("kredity", ks); this._drop(ops, z);
+            return true;
+        },
+        undoLombard(opId) {
+            const { ops, z } = this._op(opId); if (!z) return false;
+            if (ops.some(o => +o.id > +z.id && o.tip === "Ломбард" && o.napr === "платёж"))
+                throw new Error("Сначала отмените более поздний платёж по ломбарду");
+            const ws = this._wallets(z.koshel);
+            const lomb = AppStorage.get("lombard", []) || [], I = AppStorage.get("lombard_info", {}) || {};
+            (z.det || []).forEach(d => { const b = lomb.find(q => q.id === d[0]); if (b) b.ostatok = UI.r2(b.ostatok + d[1]); });
+            if (z.pi) { I.proc_ym = z.pi.proc_ym; I.proc_sum = z.pi.proc_sum; }
+            else if (I.proc_ym === String(z.data).slice(0, 7)) I.proc_sum = Math.max(0, UI.r2((+I.proc_sum || 0) - (+z.proc || 0)));
+            ws[z.koshel] = UI.r2(ws[z.koshel] + (+z.summa || 0));
+            State.setWallets(ws); AppStorage.set("lombard", lomb); AppStorage.set("lombard_info", I); this._drop(ops, z);
+            return true;
+        },
+        undoDebt(opId) {
+            const { ops, z } = this._op(opId); if (!z) return false;
+            const list = AppStorage.get("dolgi", []) || [], d = list.find(x => x.id === z.did);
+            if (!d) throw new Error("Долг удалён — отменить операцию нельзя");
+            const ws = this._wallets(z.koshel), s = +z.summa || 0, w = z.koshel, n = z.napr;
+            if (n === "взял" || n === "дал") {
+                if (Math.abs(d.ostatok - d.summa) > 0.005) throw new Error("По долгу уже были платежи — сначала отмените их");
+                if (n === "взял") { if (ws[w] < s) throw new Error("На кошельке уже меньше этой суммы"); ws[w] = UI.r2(ws[w] - s); }
+                else ws[w] = UI.r2(ws[w] + s);
+                list.splice(list.indexOf(d), 1);
+            } else if (n === "вернул я") { ws[w] = UI.r2(ws[w] + s); d.ostatok = UI.r2(d.ostatok + s); }
+            else if (n === "вернули мне") {
+                if (ws[w] < s) throw new Error("На кошельке уже меньше этой суммы");
+                ws[w] = UI.r2(ws[w] - s); d.ostatok = UI.r2(d.ostatok + s);
+            } else throw new Error("Эту операцию нельзя отменить");
+            State.setWallets(ws); AppStorage.set("dolgi", list); this._drop(ops, z);
+            return true;
+        },
+        undoGoal(opId) {
+            const { ops, z } = this._op(opId); if (!z) return false;
+            const celi = AppStorage.get("celi", {}) || {}, g = celi[z.kat];
+            if (!g) throw new Error("Цель удалена — отменить операцию нельзя");
+            const ws = this._wallets(z.koshel), s = +z.summa || 0, w = z.koshel;
+            if (z.napr === "in") {
+                if (g.nakopleno < s) throw new Error("В цели уже меньше этой суммы");
+                g.nakopleno = UI.r2(g.nakopleno - s); ws[w] = UI.r2(ws[w] + s);
+            } else {
+                if (ws[w] < s) throw new Error("На кошельке уже меньше этой суммы");
+                ws[w] = UI.r2(ws[w] - s); g.nakopleno = UI.r2(g.nakopleno + s);
+            }
+            State.setWallets(ws); AppStorage.set("celi", celi); this._drop(ops, z);
+            return true;
+        },
+        undoConvert(opId) {
+            const { ops, z } = this._op(opId); if (!z) return false;
+            const ws = State.getWallets(), t = +z.summa_kuda || 0;
+            if (ws[z.koshel] === undefined || ws[z.kuda] === undefined) throw new Error("Кошелёк из этой операции удалён");
+            if (ws[z.kuda] < t) throw new Error("На кошельке назначения уже меньше этой суммы");
+            ws[z.koshel] = UI.r2(ws[z.koshel] + (+z.summa || 0)); ws[z.kuda] = UI.r2(ws[z.kuda] - t);
+            State.setWallets(ws); this._drop(ops, z);
+            return true;
+        },
+
         // Полный откат операции. Возвращает true, если откатили; бросает Error, если нельзя.
         // Типы Кредит / Ломбард / Кредитка / Долг / Цель / Конвертация откатываются только в «Финансах».
         undo(opId) {
@@ -285,6 +365,11 @@
 
             const op = ops[idx], wallets = State.getWallets();
             if (op.tip === "Кредитка") return this.undoCard(opId);
+            if (op.tip === "Кредит") return this.undoCredit(opId);
+            if (op.tip === "Ломбард") return this.undoLombard(opId);
+            if (op.tip === "Долг") return this.undoDebt(opId);
+            if (op.tip === "Цель") return this.undoGoal(opId);
+            if (op.tip === "Конвертация") return this.undoConvert(opId);
             const tip = op.tip, s = Math.abs(+op.summa || 0), w = op.koshel, to = op.kuda, cat = op.kat;
             if (!["Трата", "Доход", "Перевод", "Корректировка"].includes(tip)) throw new Error("Эту операцию можно отменить только в «Финансах»");
             if (wallets[w] === undefined || (tip === "Перевод" && wallets[to] === undefined)) throw new Error("Кошелёк из этой операции удалён");
