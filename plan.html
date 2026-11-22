@@ -34,6 +34,9 @@
     .tot.diff b { color: var(--red); }
     .tot.diff.plus b { color: var(--green); }
     .tot.left b { color: var(--orange); }
+    .tot.inc b, .tot.incf b { color: var(--green); }
+    .tot.bal b { color: var(--green); }
+    .tot.bal.neg b { color: var(--red); }
     .auto-row { display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; font-size: 14px !important; margin-top: 6px !important; }
     .auto-row input { width: 20px !important; height: 20px; margin: 0 !important; accent-color: var(--accent); flex: 0 0 auto; }
     .auto-sub { margin-left: 22px; }
@@ -103,10 +106,13 @@
   <div class="goal-banner" id="goalBanner" onclick="openSettings()"></div>
 
   <div class="totals">
-    <div class="tot plan"><small>План</small><b id="totPlan">0</b></div>
-    <div class="tot fact"><small>Факт</small><b id="totFact">0</b></div>
+    <div class="tot plan"><small>Расходы план</small><b id="totPlan">0</b></div>
+    <div class="tot fact"><small>Расходы факт</small><b id="totFact">0</b></div>
     <div class="tot diff" id="totDiffWrap"><small>Разница</small><b id="totDiff">0</b></div>
     <div class="tot left" style="grid-column: 1 / -1"><small>Осталось внести (по незакрытым задачам)</small><b id="totLeft">0</b></div>
+    <div class="tot inc" id="totIncWrap"><small>Доходы план</small><b id="totInc">0</b></div>
+    <div class="tot incf" id="totIncFWrap"><small>Доходы факт</small><b id="totIncF">0</b></div>
+    <div class="tot bal" id="totBalWrap"><small>Остаток котла</small><b id="totBal">0</b></div>
   </div>
 
   <div class="toolbar">
@@ -164,6 +170,7 @@
     </div>
     <label>Раздел</label>
     <select id="tSection"></select>
+    <label class="chk"><input type="checkbox" id="tOff"> Платится не из котла (не считать в «Остатке котла»)</label>
     <div class="err" id="tErr"></div>
     <div class="row">
       <button class="ok" onclick="saveTask()">💾 Сохранить</button>
@@ -257,6 +264,8 @@
   const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
   const MN = ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"];
   const curYm = () => UI.date.local().slice(0, 7);
+  // Блок доходов: у раздела стоит income:true. Его задачи не входят в «расходы», а считаются отдельно.
+  const isIncSec = s => !!(s && s.income);
 
   function ymFromLabel(label) {
     const low = String(label || "").toLowerCase();
@@ -395,7 +404,7 @@
 
     $("sections").innerHTML = P.sections.map(sec => `<div class="section">
         <h2><span onclick="editSection('${esc(sec.key)}')">${esc(sec.title)}</span>
-          ${editMode ? `<button class="sec-del" onclick="delSection('${esc(sec.key)}')">🗑</button>` : ""}
+          ${editMode ? `<button class="sec-del" onclick="toggleIncome('${esc(sec.key)}')">${isIncSec(sec) ? "💵✔" : "💵"}</button><button class="sec-del" onclick="delSection('${esc(sec.key)}')">🗑</button>` : ""}
           <small data-sec="${esc(sec.key)}"></small></h2>
         ${sec.tasks.map(taskHtml).join("") || `<div class="empty">Задач нет</div>`}
         <button class="addhere" onclick="openTaskModal(null, '${esc(sec.key)}')">➕ Задача в этот блок</button>
@@ -417,6 +426,7 @@
           ${auto ? `<div><span class="src-tag">авто · ${esc(srcLabel(t.src))}</span></div>` : ""}
           ${t.from ? `<div><span class="src-tag carry">↪ из ${esc(monthLabel(t.from))}</span></div>` : ""}
           ${t.carried ? `<div><span class="src-tag carry">➡ перенесено дальше</span></div>` : ""}
+          ${t.offPot ? `<div><span class="src-tag carry">💳 не из котла</span></div>` : ""}
           ${t.note ? `<div class="task-note">${esc(t.note)}</div>` : ""}
         </div>
         ${editMode ? `<div class="task-actions"><button onclick="removeTask('${esc(t.id)}')">🗑</button></div>` : ""}
@@ -430,7 +440,9 @@
   }
 
   function updateTotals() {
-    const all = P.sections.flatMap(s => s.tasks);
+    const incSecs = P.sections.filter(isIncSec);
+    const all = P.sections.filter(s => !isIncSec(s)).flatMap(s => s.tasks);
+    const inc = incSecs.flatMap(s => s.tasks);
     const p = all.reduce((a, t) => a + num(t.plan), 0);
     const f = all.reduce((a, t) => a + factOf(t), 0);
     const d = f - p;
@@ -443,6 +455,20 @@
       return a + ((t.done || (auto && pp > 0 && ff >= pp)) ? 0 : Math.max(0, pp - ff));
     }, 0);
     $("totLeft").textContent = fmt(left) + " лей";
+
+    // Доходы отдельно; «Остаток котла» = доходы − расходы, кроме задач «не из котла»
+    const hasInc = incSecs.length > 0;
+    ["totIncWrap", "totIncFWrap", "totBalWrap"].forEach(id => $(id).style.display = hasInc ? "" : "none");
+    if (hasInc) {
+      const ip = inc.reduce((a, t) => a + num(t.plan), 0);
+      const iff = inc.reduce((a, t) => a + factOf(t), 0);
+      const offPlan = all.filter(t => t.offPot).reduce((a, t) => a + num(t.plan), 0);
+      const bal = ip - (p - offPlan);
+      $("totInc").textContent = fmt(ip) + " лей";
+      $("totIncF").textContent = fmt(iff) + " лей";
+      $("totBal").textContent = (bal > 0 ? "+" : "") + fmt(bal) + " лей";
+      $("totBalWrap").classList.toggle("neg", bal < 0);
+    }
 
     P.sections.forEach(sec => {
       const el = document.querySelector(`[data-sec="${sec.key}"]`);
@@ -501,7 +527,17 @@
 
   function addSection() {
     const title = prompt("Название нового блока:");
-    if (title && title.trim()) { P.sections.push({ key: "s_" + Date.now(), title: title.trim(), tasks: [] }); persist(); render(); }
+    if (title && title.trim()) {
+      const sec = { key: "s_" + Date.now(), title: title.trim(), tasks: [] };
+      if (confirm("Это блок доходов?\nOK — доходы, Отмена — обычный блок расходов.")) sec.income = true;
+      P.sections.push(sec); persist(); render();
+    }
+  }
+  function toggleIncome(key) {
+    const sec = P.sections.find(s => s.key === key);
+    if (!sec) return;
+    if (sec.income) delete sec.income; else sec.income = true;
+    persist(); render();
   }
   function editSection(key) {
     const sec = P.sections.find(s => s.key === key);
@@ -539,6 +575,7 @@
     $("tNote").value = f ? (f.task.note || "") : "";
     $("tPlan").value = f ? (f.task.plan || "") : "";
     $("tFact").value = f ? (f.task.fact || "") : "";
+    $("tOff").checked = !!(f && f.task.offPot);
     const src = f && f.task.src ? f.task.src : "manual";
     $("tSrc").value = src.startsWith("cat:") ? "cat" : src.startsWith("debt:") ? "debt" : src;
     $("tCat").value = src.startsWith("cat:") || src.startsWith("debt:") ? src.slice(src.indexOf(":") + 1) : "";
@@ -565,6 +602,7 @@
       plan: Math.max(0, Math.round(num($("tPlan").value))),
       fact: src === "manual" ? Math.max(0, Math.round(num($("tFact").value))) : 0
     };
+    const off = $("tOff").checked;
     const sec = P.sections.find(s => s.key === $("tSection").value);
 
     if (editingTaskId) {
@@ -572,8 +610,12 @@
       if (data.src === "manual" && data.fact !== num(f.task.fact)) delete f.task.factAuto;
       if (f.sec !== sec) { f.sec.tasks.splice(f.idx, 1); sec.tasks.push({ ...f.task, ...data }); }
       else Object.assign(f.task, data);
+      const saved = findTask(editingTaskId);
+      if (saved) { if (off) saved.task.offPot = true; else delete saved.task.offPot; }
     } else {
-      sec.tasks.push({ id: newId(), done: false, ...data });
+      const nt = { id: newId(), done: false, ...data };
+      if (off) nt.offPot = true;
+      sec.tasks.push(nt);
     }
     persist(); closeTaskModal(); render();
   }
@@ -704,13 +746,19 @@
     if (finished) return null;
     t.carried = true; // в прошлом месяце остаётся пометка
     const rest = p > 0 && f > 0 && f < p ? p - f : p;
-    return { id: newId(), title: t.title, note: t.note || "", plan: Math.round(rest), fact: 0, done: false, src: t.src || "manual", from: prev.ym };
+    const nt = { id: newId(), title: t.title, note: t.note || "", plan: Math.round(rest), fact: 0, done: false, src: t.src || "manual", from: prev.ym };
+    if (t.offPot) nt.offPot = true;
+    return nt;
   }
   function carryOver(prev, ym, withTasks = true) {
     return {
       month: monthLabel(ym), ym,
       goal: prev.goal || "", checkpoint: prev.checkpoint || "",
-      sections: prev.sections.map(sec => ({ key: sec.key, title: sec.title, tasks: withTasks ? sec.tasks.map(t => carryTask(t, prev)).filter(Boolean) : [] }))
+      sections: prev.sections.map(sec => {
+        const ns = { key: sec.key, title: sec.title, tasks: withTasks ? sec.tasks.map(t => carryTask(t, prev)).filter(Boolean) : [] };
+        if (sec.income) ns.income = true;
+        return ns;
+      })
     };
   }
   // Если наступил новый месяц, а плана на него нет — создаём и переносим невыполненное
@@ -754,7 +802,8 @@
     let n = 0, d = 0, p = 0, f = 0;
     pl.sections.forEach(s => s.tasks.forEach(t => {
       const fa = factOf(t, pl.ym), pp = num(t.plan);
-      n++; p += pp; f += fa;
+      n++;
+      if (!isIncSec(s)) { p += pp; f += fa; } // доходы в расходы не суммируем
       if (t.done || (isAuto(t) && pp > 0 && fa >= pp)) d++;
     }));
     return { n, d, p, f };
