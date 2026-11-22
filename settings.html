@@ -95,13 +95,21 @@
   <!-- Импорт -->
   <div class="card">
     <h3>📥 Импорт данных</h3>
-    <p class="hint">Вставьте текст копии (Python-формат или JSON) или выберите файл. Формат определяется сам. Существующие данные с теми же ключами будут заменены. Перед импортом автоматически делается снимок.</p>
+    <p class="hint">Вставьте текст копии (Python-формат, JSON или старая копия из «Финансов») или выберите файл. Формат определяется сам. Существующие данные с теми же ключами будут заменены. Перед импортом автоматически делается снимок.</p>
     <textarea id="importBox" placeholder="Вставь копию данных сюда"></textarea>
     <button class="btn-save" onclick="importFromText()">📥 Импортировать</button>
 
     <label for="fileInput" class="file-label">📂 Выбрать файл</label>
     <input type="file" id="fileInput" class="file-input" accept=".json,.txt,.py,text/plain,application/json" onchange="handleFile(this)">
     <div id="importStatus" class="hint" style="margin-top:10px;"></div>
+  </div>
+
+  <!-- Откат -->
+  <div class="card">
+    <h3>↩ Снимок для отката</h3>
+    <p class="hint" id="snapInfo"></p>
+    <button class="btn-blue" id="snapBtn" onclick="restoreSnap()">↩ Вернуть данные из снимка</button>
+    <p class="hint" style="margin: 10px 0 0;">Снимок создаётся автоматически перед импортом и сбросом. Повторное нажатие вернёт всё обратно: снимок и текущие данные меняются местами.</p>
   </div>
 
   <!-- Сброс -->
@@ -274,9 +282,23 @@
     } catch (e) { fallback(); }
   }
 
+  // Копии из «Финансов» старого формата (блок «# >>> ДАННЫЕ НАЧАЛО») используют другие имена ключей
+  const LEGACY_NAMES = { kohelki: "wallets", istorija: "ops" };
+  function fromLegacy(data) {
+    const g = n => data[PREFIX + n], out = {};
+    Object.keys(data).forEach(k => {
+      const n = k.slice(PREFIX.length);
+      if (n === "kat_trat" || n === "kat_dohodov") return;
+      out[PREFIX + (LEGACY_NAMES[n] || n)] = data[k];
+    });
+    if (g("kat_trat") || g("kat_dohodov")) out[PREFIX + "categories"] = { expense: g("kat_trat") || [], income: g("kat_dohodov") || [] };
+    return out;
+  }
+
   // Разбор копии: JSON ({"uchot.v2.ключ": ...}) или текст Python (ключ = значение)
   function parseBackup(text) {
     const t = text.trim();
+    const legacy = t.includes("# >>> ДАННЫЕ НАЧАЛО");
     const data = {}, failed = [];
     if (t.startsWith("{")) {
       const obj = JSON.parse(t);
@@ -289,21 +311,18 @@
       try { data[PREFIX + m[1]] = JSON.parse(pyToJson(m[2].trim())); }
       catch (e) { failed.push(m[1]); }
     });
-    return { data, failed };
+    return { data: legacy ? fromLegacy(data) : data, failed };
   }
 
   function importFromText() {
     const text = document.getElementById("importBox").value.trim();
     if (!text) return Notify.error("Вставь данные");
-    if (text.includes("# >>> ДАННЫЕ НАЧАЛО")) {
-      return Notify.error("Это копия из «Финансов». Импортируй её там: Финансы → Ещё → Импорт.");
-    }
     try {
       const { data, failed } = parseBackup(text);
       const keys = Object.keys(data);
       if (!keys.length) return Notify.error("В данных нет ключей приложения");
       if (!confirm(`Заменить текущие данные? Будет записано ключей: ${keys.length}.`)) return;
-      Backup.snapshot();
+      if (!Backup.ensureSnapshot()) return;
       keys.forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
       const warn = failed.length ? ` Не разобрано: ${failed.join(", ")}.` : "";
       document.getElementById("importStatus").textContent = `Импортировано ключей: ${keys.length}.${warn}`;
@@ -335,7 +354,7 @@
       settings: "Настройки смен, подмоги, тариф, PIN"
     };
     if (!confirm(`Удалить раздел «${names[section]}»? Это необратимо.`)) return;
-    Backup.snapshot();
+    if (!Backup.ensureSnapshot()) return;
 
     let keysToRemove = [];
     if (section === "days") keysToRemove = ["days", "orders_log", "salary_closed"];
@@ -357,13 +376,32 @@
 
   function resetAllData() {
     if (!confirm("ВНИМАНИЕ! Удалить ВСЕ данные приложения?")) return;
-    Backup.snapshot();
+    if (!Backup.ensureSnapshot()) return;
     Object.keys(localStorage).forEach(key => {
       if (key.startsWith(PREFIX) && !key.startsWith(PREFIX + "snap_")) localStorage.removeItem(key);
     });
     alert("Данные удалены. Перезагрузка.");
     location.reload();
   }
+
+  // --- Снимок для отката ---
+  function refreshSnap() {
+    const i = Backup.snapshotInfo(), el = document.getElementById("snapInfo"), b = document.getElementById("snapBtn");
+    if (!i) { el.textContent = "Снимка пока нет."; b.disabled = true; b.style.opacity = 0.5; return; }
+    el.textContent = `Снимок от ${new Date(i.at).toLocaleString("ru-RU")}, ключей: ${i.count}.`;
+    b.disabled = false; b.style.opacity = 1;
+  }
+  function restoreSnap() {
+    const i = Backup.snapshotInfo();
+    if (!i) return Notify.error("Снимка нет");
+    if (!confirm(`Вернуть данные из снимка от ${new Date(i.at).toLocaleString("ru-RU")}? Текущие данные заменятся, но их можно вернуть повторным нажатием.`)) return;
+    try {
+      const n = Backup.restoreSnapshot();
+      Notify.show(`✅ Возвращено ключей: ${n}. Перезагрузка...`);
+      setTimeout(() => location.reload(), 1000);
+    } catch (e) { Notify.error(e.message); }
+  }
+  refreshSnap();
 
   // Инициализация тарифа
   const rates = Tariff.getForDate(UI.date.local());
