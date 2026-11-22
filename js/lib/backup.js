@@ -17,6 +17,11 @@
             if (INTERNAL.test(name)) continue;
             try { out[name] = JSON.parse(localStorage.getItem(k)); } catch (e) { out[name] = localStorage.getItem(k); }
         }
+        // Данные, которые не удалось записать в localStorage и живут только в памяти
+        if (global.AppStorage && AppStorage.memEntries) {
+            const m = AppStorage.memEntries();
+            Object.keys(m).forEach(name => { if (!INTERNAL.test(name)) out[name] = m[name]; });
+        }
         return out;
     }
 
@@ -68,20 +73,32 @@
             return count;
         },
 
-        // Снимок «на всякий случай» перед импортом или сбросом (один, последний)
+        // Снимок «на всякий случай» перед импортом или сбросом (один, последний).
+        // Возвращает true, если снимок сохранён; false — если не хватило места.
         snapshot() {
-            try { const data = collect(); AppStorage.set("snap_last", { at: new Date().toISOString(), count: Object.keys(data).length, data }); }
-            catch (e) { console.warn("Backup.snapshot:", e); }
+            const data = collect(), key = PREFIX + "snap_last";
+            const text = JSON.stringify({ at: new Date().toISOString(), count: Object.keys(data).length, data });
+            try { localStorage.setItem(key, text); return true; } catch (e) {}
+            try { localStorage.removeItem(key); localStorage.setItem(key, text); return true; }
+            catch (e) { console.warn("Backup.snapshot:", e); return false; }
+        },
+        // Снимок перед опасным действием. Не вышло (мало места) — спрашиваем, продолжать ли без отката.
+        // Единственное место с этой логикой: страницы вызывают Backup.ensureSnapshot().
+        ensureSnapshot() {
+            return this.snapshot() || confirm("Не удалось сохранить снимок для отката (мало места). Продолжить без него?");
         },
         snapshotInfo() {
             const s = AppStorage.get("snap_last", null);
             return s && s.data ? { at: s.at, count: s.count } : null;
         },
+        // Возвращает данные из снимка. Текущие данные становятся новым снимком (повторный вызов вернёт всё обратно).
         restoreSnapshot() {
             const s = AppStorage.get("snap_last", null);
             if (!s || !s.data) throw new Error("Снимка нет");
-            Object.keys(collect()).forEach(k => AppStorage.remove(k));
+            const cur = collect();
+            Object.keys(cur).forEach(k => AppStorage.remove(k));
             Object.keys(s.data).forEach(k => AppStorage.set(k, s.data[k]));
+            try { localStorage.setItem(PREFIX + "snap_last", JSON.stringify({ at: new Date().toISOString(), count: Object.keys(cur).length, data: cur })); } catch (e) {}
             return Object.keys(s.data).length;
         },
 
