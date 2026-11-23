@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>💰 Бюджет</title>
+<link rel="stylesheet" href="css/theme.css">
+<link rel="stylesheet" href="css/components.css">
+<style>
+.container{max-width:560px}
+h1{font-size:30px;margin:4px 0 8px}
+h2{font-size:15px;margin:4px 0 10px;color:var(--text-dim);font-weight:600}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px}
+.mut{color:var(--text-dim);font-size:13px}
+.g{color:var(--green)}.r{color:var(--red)}.o{color:var(--orange)}
+.monthbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.monthbar button{width:44px;height:40px;border:1px solid var(--border);border-radius:10px;background:var(--panel);color:var(--text);font-size:18px;cursor:pointer}
+.monthbar .ttl{flex:1;text-align:center;font-weight:700;font-size:17px}
+.big{font-size:34px;font-weight:800;margin:2px 0}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--border)}
+.row.tap{cursor:pointer}
+.card>.row:first-of-type,.card>h2+.row{border-top:0}
+.row b{white-space:nowrap}
+.bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:6px 0 2px;position:relative}
+.bar i{display:block;height:100%;background:var(--green)}
+.bar i.y{background:var(--orange)}.bar i.rd{background:var(--red)}
+.bar u{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--text);opacity:.55}
+.stack{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--border);margin:8px 0 6px}
+.stack i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--text-dim)}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);margin-right:5px}
+.two{display:flex;gap:10px}.two>div{flex:1}
+.btn{margin-bottom:8px}
+.btn-line{background:var(--panel);color:var(--text);border:1px solid var(--border)}
+.tip{padding:8px 0;border-top:1px solid var(--border);font-size:14px;line-height:1.4}
+.card>.tip:first-of-type,.card>h2+.tip{border-top:0}
+.fld label{display:block;font-size:13px;color:var(--text-dim);margin:8px 0 3px;text-align:left}
+.fld .form-control{margin:0}
+.dialog-box{text-align:left;max-height:88vh;overflow:auto}
+.dialog-box h3{margin-bottom:8px}
+.pill{font-size:11px;padding:2px 7px;border-radius:9px;border:1px solid var(--border);color:var(--text-dim);margin-left:4px}
+.container{padding-bottom:100px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>💰 Бюджет</h1>
+  <div class="monthbar">
+    <button id="prev" aria-label="Предыдущий месяц">‹</button>
+    <div class="ttl" id="ttl"></div>
+    <button id="next" aria-label="Следующий месяц">›</button>
+  </div>
+  <div id="app"></div>
+</div>
+<div id="modal"></div>
+
+<nav class="tabbar"><div class="in">
+  <a href="today.html"><span>🏠</span>Сегодня</a>
+  <a href="index.html"><span>📦</span>Учёт</a>
+  <a href="fin.html"><span>💼</span>Финансы</a>
+  <a href="budget.html" class="active"><span>💰</span>Бюджет</a>
+  <a href="cash.html"><span>🛵</span>Скутер</a>
+  <a href="stats.html"><span>📈</span>Отчёты</a>
+  <a href="plan.html"><span>📋</span>План</a>
+  <a href="settings.html"><span>⚙</span>Настройки</a>
+</div></nav>
+
+<script src="js/lib/storage.js"></script>
+<script src="js/lib/ui.js"></script>
+<script src="js/lib/notify.js"></script>
+<script src="js/lib/guard.js"></script>
+<script src="js/lib/theme.js"></script>
+<script src="js/lib/pin.js"></script>
+<script src="js/lib/backup.js"></script>
+<script src="js/domain/state.js"></script>
+<script src="js/domain/migrate.js"></script>
+<script>Schema.run();</script>
+<script src="js/domain/selectors.js"></script>
+<script src="js/domain/tariff.js"></script>
+<script src="js/domain/finance-api.js"></script>
+<script>
+try { Theme.init(); } catch (e) {}
+
+/* ============================================================
+   Бюджет месяца — только отображение. Расчёты: Calc.budget (selectors.js),
+   запись: FinanceAPI.limitSet / limitRemove / budgetConfigSet (finance-api.js).
+   Лимиты — общий ключ byudzhety (те же, что в «Финансах»); budget_cfg — параметры.
+   ============================================================ */
+const esc = UI.esc, fmt = UI.fmt, r2 = UI.r2, num = UI.num;
+const $ = id => document.getElementById(id);
+const MONTHS = ["январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"];
+const curYm = () => UI.date.month();
+let ym = curYm();
+const shiftYm = (m, n) => UI.date.shift(m, n);
+const ymTitle = m => MONTHS[+m.slice(5, 7) - 1] + " " + m.slice(0, 4);
+const compute = m => Calc.budget(m); // все расчёты — в selectors.js (Calc.budget)
+
+function tips(B) {
+  const t = [];
+  if (B.income <= 0) t.push("Нет данных о доходе. Задайте ожидаемую зарплату в «⚙ Параметры» — без неё бюджет посчитать нельзя.");
+  if (B.income > 0 && B.free < 0) t.push(`Платежи и лимиты больше дохода на <b>${fmt(-B.free)}</b> лей. Снизьте лимиты самых «мягких» категорий (кафе, развлечения) или ожидаемую откладку.`);
+  if (B.income > 0 && B.fixedPlan / B.income > 0.4) t.push(`Обязательные платежи съедают <b>${Math.round(B.fixedPlan / B.income * 100)}%</b> дохода. Ориентир — до 40%; стоит погашать самые дорогие по процентам долги первыми.`);
+  if (B.income > 0 && B.save <= 0) t.push(`Откладывание не задано. Хотя бы 10% дохода — это ≈ <b>${fmt(Math.round(B.income * 0.1))}</b> лей в месяц: «сначала заплати себе».`);
+  B.cats.filter(c => c.st === "r").slice(0, 2).forEach(c => t.push(`🔴 «${esc(c.name)}»: лимит исчерпан (${fmt(c.spent)} из ${fmt(c.limit)}).`));
+  B.cats.filter(c => c.st === "o" && c.proj != null && c.proj > c.limit && c.spent < c.limit).slice(0, 2)
+    .forEach(c => t.push(`🟡 «${esc(c.name)}»: при таком темпе выйдет ≈ ${fmt(Math.round(c.proj))} при лимите ${fmt(c.limit)}.`));
+  const big = B.noLimit.filter(c => B.totalSpent > 0 && c.spent / B.totalSpent >= 0.1)[0];
+  if (big) t.push(`На «${esc(big.name)}» ушло ${fmt(big.spent)} лей без лимита — поставьте лимит, чтобы видеть темп.`);
+  if (!t.length) t.push("Всё в порядке: лимиты соблюдаются, деньги распределены. 👍");
+  return t.slice(0, 5);
+}
+
+/* ---------- отрисовка ---------- */
+function bar(pct, st, mark) {
+  const w = Math.min(100, Math.max(0, pct));
+  const cls = st === "r" ? "rd" : st === "o" ? "y" : "";
+  return `<div class="bar"><i class="${cls}" style="width:${w}%"></i>${mark != null ? `<u style="left:${Math.min(100, mark)}%"></u>` : ""}</div>`;
+}
+
+function render() {
+  $("ttl").textContent = ymTitle(ym);
+  const B = compute(ym), isCur = ym === curYm(), isFuture = ym > curYm();
+  let h = "";
+
+  // 1. Итог распределения
+  const parts = [
+    { n: "Платежи", v: B.fixedPlan, c: "var(--purple)" },
+    { n: "Лимиты", v: B.limitsSum, c: "var(--accent)" },
+    { n: "Откладываю", v: B.save, c: "var(--green)" },
+    { n: "Свободно", v: Math.max(0, B.free), c: "var(--orange)" }
+  ];
+  const tot = Math.max(B.income, parts.reduce((a, p) => a + p.v, 0), 1);
+  h += `<div class="card">
+    <h2>Распределение дохода</h2>
+    <div class="mut">Доход (план): <b>${fmt(B.income)}</b> лей</div>
+    <div class="big ${B.free < 0 ? "r" : "g"}">${B.free < 0 ? "−" : ""}${fmt(Math.abs(B.free))} <span style="font-size:16px;font-weight:600">лей ${B.free < 0 ? "перебор" : "не распределено"}</span></div>
+    <div class="stack">${parts.map(p => `<i style="width:${p.v / tot * 100}%;background:${p.c}"></i>`).join("")}</div>
+    <div class="legend">${parts.map(p => `<span style="--c:${p.c}">${p.n}: ${fmt(p.v)}</span>`).join("")}</div>
+    <div class="row" style="margin-top:8px"><div>💵 Зарплата<div class="mut">${esc(B.sal.src)}</div></div><b>${fmt(B.sal.v)}</b></div>
+    <div class="row"><div>➕ Прочие доходы</div><b>${fmt(B.otherIncome)}</b></div>
+    <button class="btn btn-line" style="margin-top:10px;margin-bottom:0" onclick="openCfg()">⚙ Параметры (зарплата, откладывание)</button>
+  </div>`;
+
+  // 2. Сколько можно тратить в день
+  if (!isFuture && ym === curYm()) {
+    const over = B.cats.filter(c => c.st === "r").length;
+    h += `<div class="card">
+      <h2>Сегодня</h2>
+      <div class="two">
+        <div><div class="mut">Можно в день</div><div class="big">${B.daysLeft > 0 && B.cats.length ? fmt(Math.floor(B.perDay)) : "—"}</div><div class="mut">осталось ${B.daysLeft} дн.</div></div>
+        <div><div class="mut">Осталось в лимитах</div><div class="big">${B.cats.length ? fmt(Math.round(B.varLeft)) : "—"}</div><div class="mut">потрачено всего ${fmt(B.totalSpent)}</div></div>
+      </div>
+      ${!B.cats.length ? '<div class="mut">Поставьте лимиты на категории — и здесь появится дневной бюджет.</div>' : over ? `<div class="mut r">Исчерпано лимитов: ${over}</div>` : ""}
+    </div>`;
+  }
+
+  // 3. Лимиты по категориям
+  h += `<div class="card"><h2>Лимиты по категориям</h2>`;
+  if (!B.cats.length) h += `<div class="mut">Лимитов пока нет.</div>`;
+  B.cats.forEach(c => {
+    const mark = isCur ? B.frac * 100 : null;
+    h += `<div class="row tap" onclick="editLimit(${JSON.stringify(c.name).replace(/"/g, "&quot;")})" style="display:block">
+      <div style="display:flex;justify-content:space-between;gap:8px"><span>${c.st === "r" ? "🔴" : c.st === "o" ? "🟡" : "🟢"} ${esc(c.name)}</span><b>${fmt(c.spent)} / ${fmt(c.limit)}</b></div>
+      ${bar(c.pct, c.st, mark)}
+      <div class="mut">${c.pct}% · ${c.spent >= c.limit ? "перерасход " + fmt(c.spent - c.limit) : "осталось " + fmt(c.limit - c.spent)}${isCur && c.proj != null ? " · прогноз ≈ " + fmt(Math.round(c.proj)) : ""}</div>
+    </div>`;
+  });
+  h += `<button class="btn btn-primary" style="margin-top:10px" onclick="editLimit(null)">＋ Лимит на категорию</button>`;
+  const sn = Object.keys(B.suggest).length;
+  if (sn) h += `<button class="btn btn-line" onclick="applySuggest()">✨ Предложить лимиты по средним тратам (${sn})</button>`;
+  h += `</div>`;
+
+  // 4. Траты без лимита
+  if (B.noLimit.length) {
+    h += `<div class="card"><h2>Траты без лимита</h2>${B.noLimit.map(c => `<div class="row tap" onclick="editLimit(${JSON.stringify(c.name).replace(/"/g, "&quot;")})"><span>${esc(c.name)}${B.suggest[c.name] ? `<span class="pill">≈ ${fmt(B.suggest[c.name])}</span>` : ""}</span><b>${fmt(c.spent)}</b></div>`).join("")}<div class="mut" style="margin-top:6px">Нажмите на категорию, чтобы поставить лимит.</div></div>`;
+  }
+
+  // 5. Обязательные платежи
+  if (B.fixed.length || B.regs.length) {
+    h += `<div class="card"><h2>Обязательные платежи</h2>`;
+    B.fixed.forEach(x => {
+      h += `<div class="row"><div>${esc(x.title)}${x.note ? `<div class="mut">${esc(x.note)}</div>` : ""}</div><b class="${x.left <= 0 ? "g" : ""}">${x.left <= 0 ? "✅ " : ""}${fmt(x.fact)} / ${fmt(x.plan)}</b></div>`;
+    });
+    B.regs.forEach(x => {
+      h += `<div class="row"><div>${esc(x.title)}<div class="mut">${esc(x.note)}${x.inLimit ? (x.note ? " · " : "") + "внутри лимита «" + esc(x.kat) + "»" : ""}</div></div><b>${fmt(x.plan)}</b></div>`;
+    });
+    h += `</div>`;
+  }
+
+  // 6. Советы
+  h += `<div class="card"><h2>💡 Советы</h2>${tips(B).map(s => `<div class="tip">${s}</div>`).join("")}</div>`;
+
+  $("app").innerHTML = h;
+}
+
+/* ---------- диалоги ---------- */
+function modal(title, fields, onSave, extra) {
+  const box = $("modal");
+  const inputs = fields.map(f => {
+    if (f.options) return `<div class="fld"><label for="f_${f.id}">${esc(f.label)}</label><select class="form-control" id="f_${f.id}">${f.options.map(o => `<option${o === f.value ? " selected" : ""}>${esc(o)}</option>`).join("")}</select></div>`;
+    return `<div class="fld"><label for="f_${f.id}">${esc(f.label)}</label><input class="form-control" id="f_${f.id}" inputmode="decimal" autocomplete="off" value="${esc(f.value == null ? "" : f.value)}" placeholder="${esc(f.ph || "")}"></div>`;
+  }).join("");
+  box.innerHTML = `<div class="dialog-overlay" id="ov"><div class="dialog-box"><h3>${esc(title)}</h3>${inputs}
+    <div class="mut" id="mErr" style="color:var(--red);min-height:18px;margin:6px 0"></div>
+    <div class="dialog-buttons"><button class="dialog-no" id="mNo">Отмена</button><button class="dialog-yes" id="mYes">Сохранить</button></div>
+    ${extra ? `<button class="dialog-no" id="mExtra" style="width:100%;margin-top:8px;padding:12px;border:none;border-radius:12px;font-weight:600;color:var(--red)">${esc(extra.label)}</button>` : ""}
+  </div></div>`;
+  const close = () => { box.innerHTML = ""; };
+  $("mNo").onclick = close;
+  $("ov").addEventListener("click", e => { if (e.target.id === "ov") close(); });
+  $("mYes").onclick = () => {
+    if (!guardAction("budget-save")) return;
+    const v = {}; fields.forEach(f => v[f.id] = $("f_" + f.id).value);
+    try { onSave(v); close(); render(); } catch (e) { $("mErr").textContent = e.message || String(e); }
+  };
+  if (extra) $("mExtra").onclick = () => { extra.fn(); close(); render(); };
+  const first = box.querySelector("input"); if (first) setTimeout(() => first.focus(), 50);
+}
+
+function expenseCats() {
+  const c = new Set(FinanceAPI._cats().expense);
+  compute(ym).noLimit.forEach(x => c.add(x.name));
+  return [...c];
+}
+
+function editLimit(name) {
+  const lim = Calc.budgetLimits();
+  if (name == null) {
+    const free = expenseCats().filter(k => lim[k] == null);
+    if (!free.length) return Notify.error("Лимиты уже стоят на всех категориях");
+    modal("Новый лимит на месяц", [{ id: "k", label: "Категория", options: free, value: free[0] }, { id: "l", label: "Лимит, лей", ph: "например 800" }],
+      v => FinanceAPI.limitSet(v.k, v.l));
+  } else {
+    const sg = compute(ym).suggest[name];
+    modal("Лимит: " + name, [{ id: "l", label: "Лимит на месяц, лей", value: lim[name] != null ? lim[name] : "", ph: sg ? "≈ " + sg : "" }],
+      v => FinanceAPI.limitSet(name, v.l),
+      lim[name] != null ? { label: "🗑 Убрать лимит", fn: () => FinanceAPI.limitRemove(name) } : null);
+  }
+}
+
+function applySuggest() {
+  const B = compute(ym), keys = Object.keys(B.suggest);
+  if (!keys.length) return;
+  const txt = keys.map(k => k + ": " + fmt(B.suggest[k])).join("\n");
+  if (!confirm("Поставить лимиты на основе средних трат за " + B.histN + " мес. (+5%)?\n\n" + txt)) return;
+  keys.forEach(k => { if (Calc.budgetLimits()[k] == null) FinanceAPI.limitSet(k, B.suggest[k]); });
+  Notify.show("Лимитов добавлено: " + keys.length); render();
+}
+
+function openCfg() {
+  const c = Calc.budgetCfg();
+  modal("Параметры бюджета", [
+    { id: "salary", label: "Ожидаемая зарплата в месяц (пусто = авто по прошлым месяцам)", value: c.salary == null ? "" : c.salary },
+    { id: "extra", label: "Прочие доходы в месяц (подработки, чаевые…)", value: c.extra || "" },
+    { id: "save", label: "Откладывать в месяц", value: c.save || "" }
+  ], v => FinanceAPI.budgetConfigSet(v));
+}
+
+$("prev").onclick = () => { ym = shiftYm(ym, -1); render(); };
+$("next").onclick = () => { ym = shiftYm(ym, 1); render(); };
+window.addEventListener("pageshow", render);
+window.addEventListener("storage", render);
+render();
+</script>
+</body>
+</html>
