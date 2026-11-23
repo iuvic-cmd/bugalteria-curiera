@@ -176,6 +176,7 @@
     <a href="today.html"><span>🏠</span>Сегодня</a>
 <a href="index.html"><span>📦</span>Учёт</a>
     <a href="fin.html"><span>💼</span>Финансы</a>
+  <a href="budget.html"><span>💰</span>Бюджет</a>
     <a href="cash.html" class="active"><span>🛵</span>Скутер</a>
     <a href="stats.html"><span>📈</span>Отчёты</a>
     <a href="plan.html"><span>📋</span>План</a>
@@ -200,7 +201,7 @@
   const $ = id => document.getElementById(id);
   const esc = UI.esc;
   const today = () => UI.date.local();
-  const fmtDate = ds => String(ds || "").split("-").reverse().join(".");
+  const fmtDate = ds => UI.date.ru(ds);
   const money = x => UI.fmt(UI.r2(+x || 0));
   const km1 = x => UI.fmt(Math.round((+x || 0) * 10) / 10);
   const fuelSum = f => +(f.total != null ? f.total : f.amount) || 0; // старые записи хранят сумму в amount
@@ -219,7 +220,7 @@
   ];
 
   // ---------- Даты ----------
-  const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
+  const daysBetween = (a, b) => UI.date.diff(a, b);
   function addMonthsStr(ds, n) {
     const [y, m, d] = ds.split("-").map(Number);
     const dt = new Date(y, m - 1 + n, 1);
