@@ -80,6 +80,12 @@
             Object.keys(memFallback).forEach(k => { out[k.slice(PREFIX.length)] = memFallback[k]; });
             return out;
         },
+        // Имена всех ключей приложения (без префикса), включая живущие только в памяти
+        keys() {
+            const out = new Set(Object.keys(memFallback).map(k => k.slice(PREFIX.length)));
+            try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith(PREFIX)) out.add(k.slice(PREFIX.length)); } } catch (e) {}
+            return [...out];
+        },
         isUnsaved() { return blocked || Object.keys(memFallback).length > 0; }
     };
 
