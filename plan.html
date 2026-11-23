@@ -38,6 +38,8 @@
     .tot.bal b { color: var(--green); }
     .tot.bal.neg b { color: var(--red); }
     .tot.potw b { color: var(--accent); }
+    .tot.potw.neg b, .tot.mine.neg b { color: var(--red); }
+    .tot.mine b { color: var(--accent); }
     .auto-row { display: flex !important; align-items: center; gap: 8px; color: var(--text) !important; font-size: 14px !important; margin-top: 6px !important; }
     .auto-row input { width: 20px !important; height: 20px; margin: 0 !important; accent-color: var(--accent); flex: 0 0 auto; }
     .auto-sub { margin-left: 22px; }
@@ -114,7 +116,8 @@
     <div class="tot inc" id="totIncWrap"><small>Доходы план</small><b id="totInc">0</b></div>
     <div class="tot incf" id="totIncFWrap"><small>Доходы факт</small><b id="totIncF">0</b></div>
     <div class="tot bal" id="totBalWrap"><small>Баланс</small><b id="totBal">0</b></div>
-    <div class="tot potw" id="totPotWrap" style="grid-column: 1 / -1"><small>Общий котёл: внесено / план</small><b id="totPot">0</b></div>
+    <div class="tot potw" id="totPotWrap" style="grid-column: 1 / -1"><small>Общий котёл: остаток</small><b id="totPot">0</b><div class="hint" id="totPotSub"></div></div>
+    <div class="tot mine" id="totMineWrap" style="grid-column: 1 / -1"><small>Мои: остаток</small><b id="totMine">0</b><div class="hint" id="totMineSub"></div></div>
   </div>
 
   <div class="toolbar">
@@ -268,6 +271,8 @@
   const curYm = () => UI.date.local().slice(0, 7);
   // Блок доходов: у раздела стоит income:true. Его задачи не входят в «расходы», а считаются отдельно.
   const isIncSec = s => !!(s && s.income);
+  // Каждый блок явно помечен в данных: income (доходы/расходы) и pot (общий котёл/мои). Без флага блок «мой».
+  const isPotOut = s => !!s && !s.income && !!s.pot;
 
   function ymFromLabel(label) {
     const low = String(label || "").toLowerCase();
@@ -406,7 +411,8 @@
 
     $("sections").innerHTML = P.sections.map(sec => `<div class="section">
         <h2><span onclick="editSection('${esc(sec.key)}')">${esc(sec.title)}</span>
-          ${editMode ? `<button class="sec-del" onclick="toggleIncome('${esc(sec.key)}')">${isIncSec(sec) ? (sec.pot ? "💵★" : "💵✔") : "💵"}</button><button class="sec-del" onclick="delSection('${esc(sec.key)}')">🗑</button>` : ""}
+          <span class="src-tag">${isIncSec(sec) ? "доходы" : "расходы"} · ${sec.pot ? "общий котёл" : "мои"}</span>
+          ${editMode ? `<button class="sec-del" onclick="toggleIncome('${esc(sec.key)}')">${isIncSec(sec) ? "💵" : "💸"}</button><button class="sec-del" onclick="togglePot('${esc(sec.key)}')">${sec.pot ? "🍯" : "👤"}</button><button class="sec-del" onclick="delSection('${esc(sec.key)}')">🗑</button>` : ""}
           <small data-sec="${esc(sec.key)}"></small></h2>
         ${sec.tasks.map(taskHtml).join("") || `<div class="empty">Задач нет</div>`}
         <button class="addhere" onclick="openTaskModal(null, '${esc(sec.key)}')">➕ Задача в этот блок</button>
@@ -460,7 +466,6 @@
 
     // Доходы отдельно; «Остаток котла» = доходы − расходы, кроме задач «не из котла»
     const hasInc = incSecs.length > 0;
-    const potSecs = incSecs.filter(s => s.pot);
     ["totIncWrap", "totIncFWrap", "totBalWrap"].forEach(id => $(id).style.display = hasInc ? "" : "none");
     if (hasInc) {
       const ip = inc.reduce((a, t) => a + num(t.plan), 0);
@@ -472,10 +477,24 @@
       $("totBal").textContent = (bal > 0 ? "+" : "") + fmt(bal) + " лей";
       $("totBalWrap").classList.toggle("neg", bal < 0);
     }
-    $("totPotWrap").style.display = potSecs.length ? "" : "none";
-    if (potSecs.length) {
-      const pt = potSecs.flatMap(s => s.tasks);
-      $("totPot").textContent = fmt(pt.reduce((a, t) => a + factOf(t), 0)) + " / " + fmt(pt.reduce((a, t) => a + num(t.plan), 0)) + " лей";
+    // Две отдельные части: общий котёл и мои. Остаток = внесено/получено − потрачено (по факту)
+    const grp = (isInc, isPot) => P.sections.filter(s => !!s.income === isInc && !!s.pot === isPot).flatMap(s => s.tasks);
+    const sumBy = (arr, fn) => arr.reduce((a, t) => a + fn(t), 0);
+    const planOf = t => num(t.plan);
+    const potSec = P.sections.some(s => s.pot);
+    $("totPotWrap").style.display = potSec ? "" : "none";
+    if (potSec) {
+      const pin = sumBy(grp(true, true), factOf), pout = sumBy(grp(false, true), factOf), poutPlan = sumBy(grp(false, true), planOf);
+      $("totPot").textContent = fmt(pin - pout) + " лей";
+      $("totPotWrap").classList.toggle("neg", pin - pout < 0);
+      $("totPotSub").textContent = `внесено ${fmt(pin)} · потрачено ${fmt(pout)} из ${fmt(poutPlan)} по плану`;
+    }
+    $("totMineWrap").style.display = hasInc ? "" : "none";
+    if (hasInc) {
+      const min = sumBy(grp(true, false), factOf), mout = sumBy(grp(false, false), factOf), moutPlan = sumBy(grp(false, false), planOf);
+      $("totMine").textContent = fmt(min - mout) + " лей";
+      $("totMineWrap").classList.toggle("neg", min - mout < 0);
+      $("totMineSub").textContent = `получено ${fmt(min)} · потрачено ${fmt(mout)} из ${fmt(moutPlan)} по плану`;
     }
 
     P.sections.forEach(sec => {
@@ -537,17 +556,23 @@
     const title = prompt("Название нового блока:");
     if (title && title.trim()) {
       const sec = { key: "s_" + Date.now(), title: title.trim(), tasks: [] };
-      if (confirm("Это блок доходов?\nOK — доходы, Отмена — обычный блок расходов.")) sec.income = true;
+      if (confirm("Это блок доходов?\nOK — доходы, Отмена — расходы.")) sec.income = true;
+      sec.pot = confirm("Это общий котёл?\nOK — общий котёл, Отмена — мои.");
       P.sections.push(sec); persist(); render();
     }
   }
+  // 💵/💸: блок доходов или расходов
   function toggleIncome(key) {
     const sec = P.sections.find(s => s.key === key);
     if (!sec) return;
-    // по кругу: обычный → доходы → доходы общего котла → обычный
-    if (!sec.income) sec.income = true;
-    else if (!sec.pot) sec.pot = true;
-    else { delete sec.income; delete sec.pot; }
+    if (sec.income) delete sec.income; else sec.income = true;
+    persist(); render();
+  }
+  // 🍯/👤: общий котёл или мои
+  function togglePot(key) {
+    const sec = P.sections.find(s => s.key === key);
+    if (!sec) return;
+    sec.pot = !sec.pot;
     persist(); render();
   }
   function editSection(key) {
@@ -768,7 +793,7 @@
       sections: prev.sections.map(sec => {
         const ns = { key: sec.key, title: sec.title, tasks: withTasks ? sec.tasks.map(t => carryTask(t, prev)).filter(Boolean) : [] };
         if (sec.income) ns.income = true;
-        if (sec.pot) ns.pot = true;
+        if (sec.pot !== undefined) ns.pot = sec.pot;
         return ns;
       })
     };
