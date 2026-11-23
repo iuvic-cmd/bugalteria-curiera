@@ -391,6 +391,177 @@
             State.setOps(ops);
             State.setWallets(wallets);
             return true;
+        },
+
+        // ====== Справочники и правка: кошельки, категории, лимиты, операция ======
+        // Всё это раньше жило в fin.html и «забывало» часть мест, где имя хранится строкой
+        // (План, Скутер, регулярные платежи…). Теперь любое переименование/удаление идёт каскадом отсюда.
+        _name(x, what) {
+            x = String(x == null ? "" : x).replace(/\s+/g, " ").trim();
+            if (!x) throw new Error("Пустое название" + (what ? " (" + what + ")" : ""));
+            return x;
+        },
+        _cats() { const c = State.getCategories() || {}; return { expense: (c.expense || []).slice(), income: (c.income || []).slice() }; },
+        _service: /Скутер|Топливо/, // категории «Скутера»: по ним он находит свои траты — их не переименовываем
+
+        walletAdd({ name, currency, rate }) {
+            name = this._name(name, "кошелёк"); currency = currency || "MDL";
+            if (!["MDL", "USD", "EUR"].includes(currency)) throw new Error("Неизвестная валюта");
+            const ws = State.getWallets();
+            if (name in ws) throw new Error("Такой кошелёк уже есть");
+            const kursy = AppStorage.get("kursy", {}) || {}; rate = UI.num(rate);
+            if (currency !== "MDL" && !(rate > 0) && !(+kursy[currency] > 0)) throw new Error("Укажите курс к лею");
+            ws[name] = 0; State.setWallets(ws);
+            if (currency !== "MDL") {
+                const v = AppStorage.get("valyuty", {}) || {}; v[name] = currency; AppStorage.set("valyuty", v);
+                if (rate > 0) { kursy[currency] = rate; AppStorage.set("kursy", kursy); }
+            }
+            return name;
+        },
+        rateSet(currency, rate) {
+            rate = UI.num(rate);
+            if (!(rate > 0)) throw new Error("Курс должен быть больше нуля");
+            const k = AppStorage.get("kursy", {}) || {}; k[currency] = rate; AppStorage.set("kursy", k);
+        },
+        walletRename(old, nw) {
+            nw = this._name(nw, "кошелёк");
+            const ws = State.getWallets();
+            if (!(old in ws)) throw new Error("Кошелёк не найден");
+            if (nw === old) return old;
+            if (nw in ws) throw new Error("Такой кошелёк уже есть");
+            const out = {}; Object.keys(ws).forEach(k => { out[k === old ? nw : k] = ws[k]; });
+            State.setWallets(out);
+            const ops = State.getOps();
+            ops.forEach(z => { if (z && z.koshel === old) z.koshel = nw; if (z && z.kuda === old) z.kuda = nw; });
+            State.setOps(ops);
+            const val = AppStorage.get("valyuty", {}) || {};
+            if (val[old]) { val[nw] = val[old]; delete val[old]; AppStorage.set("valyuty", val); }
+            const fix = (key, f) => { if (!AppStorage.has(key)) return; const v = AppStorage.get(key, null); if (v != null) { f(v); AppStorage.set(key, v); } };
+            const byW = list => (Array.isArray(list) ? list : Object.values(list || {})).forEach(r => { if (r && r.koshel === old) r.koshel = nw; });
+            ["regulyarnye", "kredity", "kartki", "celi"].forEach(k => fix(k, byW));
+            fix("lombard_info", I => { if (I && I.koshel === old) I.koshel = nw; });
+            fix("plan_cfg", c => { if (c && c.potWallet === old) c.potWallet = nw; });
+            // Скутер: кошелёк хранится в записях заправок и замен (для возврата денег при удалении записи)
+            const hist = list => (Array.isArray(list) ? list : []).forEach(h => { if (h && h.wallet === old) h.wallet = nw; });
+            fix("scooter_fuel", hist);
+            AppStorage.keys().filter(k => /^(comp_|official_)/.test(k)).forEach(k => fix(k, d => hist(d && d.history)));
+            return nw;
+        },
+        walletRemove(name) {
+            const ws = State.getWallets();
+            if (!(name in ws)) throw new Error("Кошелёк не найден");
+            if (Object.keys(ws).length < 2) throw new Error("Нужен хотя бы один кошелёк");
+            if (ws[name] !== 0) throw new Error("Сначала обнулите баланс (корректировка или перевод)");
+            const goal = Object.keys(AppStorage.get("celi", {}) || {}).find(k => AppStorage.get("celi", {})[k].koshel === name);
+            if (goal) throw new Error("Кошелёк привязан к цели «" + goal + "»");
+            const card = (AppStorage.get("kartki", []) || []).find(c => c.koshel === name);
+            if (card) throw new Error("Кошелёк привязан к карте «" + card.nazvanie + "»");
+            const reg = (AppStorage.get("regulyarnye", []) || []).find(r => r.koshel === name);
+            if (reg) throw new Error("Кошелёк используется в регулярном платеже «" + reg.nazvanie + "»");
+            if ((AppStorage.get("plan_cfg", {}) || {}).potWallet === name) throw new Error("Кошелёк выбран в настройках «Плана»");
+            delete ws[name]; State.setWallets(ws);
+            const val = AppStorage.get("valyuty", {}) || {}; if (name in val) { delete val[name]; AppStorage.set("valyuty", val); }
+        },
+
+        // Переименование / слияние категории во всех местах: журнал, регулярные, лимиты, итоги, задачи «Плана»
+        _recat(kind, old, nw) {
+            const tip = kind === "expense" ? "Трата" : "Доход";
+            const ops = State.getOps();
+            ops.forEach(z => {
+                if (!z) return;
+                if (z.tip === tip && z.kat === old) z.kat = nw;
+                else if (kind === "expense" && z.tip === "Кредитка" && z.napr === "покупка" && z.kat === old) z.kat = nw;
+            });
+            State.setOps(ops);
+            const reg = AppStorage.get("regulyarnye", []) || [];
+            reg.forEach(r => { if (r.tip === tip && r.kat === old) r.kat = nw; });
+            AppStorage.set("regulyarnye", reg);
+            const key = kind === "expense" ? "traty" : "dohody", m = AppStorage.get(key, {}) || {};
+            if (old in m) { m[nw] = UI.r2((m[nw] || 0) + m[old]); delete m[old]; AppStorage.set(key, m); }
+            if (kind === "expense") {
+                const L = AppStorage.get("byudzhety", {}) || {};
+                if (old in L) { L[nw] = nw in L ? UI.r2(L[nw] + L[old]) : L[old]; delete L[old]; AppStorage.set("byudzhety", L); }
+                const plans = AppStorage.get("plans", null);
+                if (plans && typeof plans === "object") {
+                    let ch = false; const from = "cat:" + old.toLowerCase();
+                    Object.values(plans).forEach(p => ((p && p.sections) || []).forEach(s => (s.tasks || []).forEach(t => {
+                        if (t && typeof t.src === "string" && t.src.toLowerCase() === from) { t.src = "cat:" + nw; ch = true; }
+                    })));
+                    if (ch) AppStorage.set("plans", plans);
+                }
+            }
+        },
+        categoryAdd(kind, name) {
+            name = this._name(name, "категория");
+            const c = this._cats(), list = c[kind];
+            if (!list) throw new Error("Неизвестный тип категории");
+            if (list.some(x => x.toLowerCase() === name.toLowerCase())) throw new Error("Уже есть такая категория");
+            list.push(name); State.setCategories(c); return name;
+        },
+        categoryRename(kind, old, nw) {
+            nw = this._name(nw, "категория");
+            const c = this._cats(), list = c[kind] || [], i = list.indexOf(old);
+            if (i < 0) throw new Error("Категория не найдена");
+            if (this._service.test(old) || this._service.test(nw)) throw new Error("Категории «Скутера» служебные: по ним он находит свои траты");
+            if (nw.toLowerCase() !== old.toLowerCase() && list.some(x => x.toLowerCase() === nw.toLowerCase())) throw new Error("Такая категория уже есть");
+            list[i] = nw; State.setCategories(c);
+            this._recat(kind, old, nw);
+            return nw;
+        },
+        // moveTo — куда перенести операции (обязательно, если по категории уже есть операции)
+        categoryRemove(kind, name, moveTo) {
+            const c = this._cats(), list = c[kind] || [], i = list.indexOf(name);
+            if (i < 0) throw new Error("Категория не найдена");
+            if (this._service.test(name)) throw new Error("Категории «Скутера» служебные — их нельзя удалять");
+            const tip = kind === "expense" ? "Трата" : "Доход";
+            const used = State.getOps().filter(z => z && z.tip === tip && z.kat === name).length;
+            if (used && !moveTo) throw new Error("Укажите категорию, куда перенести операции (" + used + ")");
+            if (moveTo && (moveTo === name || !list.includes(moveTo))) throw new Error("Неверная категория для переноса");
+            list.splice(i, 1); State.setCategories(c);
+            if (moveTo) this._recat(kind, name, moveTo);
+            else if (kind === "expense") this.limitRemove(name);
+        },
+
+        // Лимиты бюджета по категориям трат (ключ byudzhety — общий для «Финансов» и «Бюджета»)
+        limitSet(cat, amount) {
+            cat = this._name(cat, "категория"); amount = this._pos(amount);
+            const L = AppStorage.get("byudzhety", {}) || {}; L[cat] = amount; AppStorage.set("byudzhety", L);
+        },
+        limitRemove(cat) {
+            const L = AppStorage.get("byudzhety", {}) || {};
+            if (cat in L) { delete L[cat]; AppStorage.set("byudzhety", L); }
+        },
+        // Параметры бюджета месяца: ожидаемая зарплата (null = авто), прочие доходы, откладывание
+        budgetConfigSet({ salary, extra, save }) {
+            const blank = x => x === "" || x == null;
+            const n = x => blank(x) ? 0 : UI.num(x);
+            if (n(extra) < 0 || n(save) < 0 || (!blank(salary) && UI.num(salary) < 0)) throw new Error("Суммы не могут быть отрицательными");
+            AppStorage.set("budget_cfg", { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)) });
+        },
+
+        // Правка траты/дохода: баланс, итоги по категориям и базовая сумма (baz) пересчитываются вместе
+        opEdit({ id, category, amount, date, wallet, note }) {
+            const ops = State.getOps(), z = ops.find(x => x && String(x.id) === String(id));
+            if (!z) throw new Error("Операция не найдена");
+            if (z.ref) throw new Error("Операция создана в «Учёте» или «Скутере» — меняйте её там");
+            if (z.tip !== "Трата" && z.tip !== "Доход") throw new Error("Менять можно только траты и доходы");
+            amount = this._pos(amount); category = this._name(category, "категория");
+            const ws = State.getWallets();
+            if (ws[wallet] === undefined) throw new Error("Кошелёк не найден");
+            if (ws[z.koshel] === undefined) throw new Error("Кошелёк из этой операции удалён");
+            const sg = z.tip === "Трата" ? -1 : 1;
+            ws[z.koshel] = UI.r2(ws[z.koshel] - sg * z.summa);
+            ws[wallet] = UI.r2(ws[wallet] + sg * amount);
+            if (ws[z.koshel] < 0 || ws[wallet] < 0) throw new Error("Не хватит денег на кошельке");
+            const key = z.tip === "Трата" ? "traty" : "dohody";
+            bump(key, z.kat, -z.summa); bump(key, category, amount);
+            z.kat = category; z.summa = amount; z.koshel = wallet;
+            if (note) z.zametka = note; else delete z.zametka;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(date || "")) z.data = date + " " + ((z.data || "").slice(11) || "12:00");
+            const b = toBase(wallet, amount); if (b == null) delete z.baz; else z.baz = b;
+            State.setWallets(ws); State.setOps(ops);
+            ensureCat(z.tip === "Трата" ? "expense" : "income", category);
+            return true;
         }
     };
 
