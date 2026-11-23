@@ -40,6 +40,17 @@
                 const d = new Date();
                 return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
             },
+            // Сдвиг месяца: shift("2026-11", -1) -> "2026-10"
+            shift(ym, n) {
+                const [y, m] = String(ym).split("-").map(Number), t = new Date(y, m - 1 + n, 1);
+                return t.getFullYear() + "-" + String(t.getMonth() + 1).padStart(2, "0");
+            },
+            // Сколько дней в месяце "ГГГГ-ММ"
+            daysIn(ym) { const [y, m] = String(ym).split("-").map(Number); return new Date(y, m, 0).getDate(); },
+            // Разница в днях между двумя датами ГГГГ-ММ-ДД
+            diff(a, b) { return Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000); },
+            // Дата ГГГГ-ММ-ДД плюс n дней
+            add(ds, n) { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() + n); return UI.date.local(d); },
             // Нормализация любой даты (ISO, timestamp, ru)
             norm(v) {
                 if (v == null || v === "") return "";
