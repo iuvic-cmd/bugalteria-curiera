@@ -32,6 +32,7 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
   <div class="card" id="cDay"></div>
   <div class="card" id="cSalary"></div>
   <div class="card" id="cPay"></div>
+  <div class="card" id="cBudget"></div>
   <div class="card" id="cScooter"></div>
   <div class="card" id="cBackup" style="display:none"></div>
   <div class="card" id="cPlan"></div>
@@ -41,6 +42,7 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
   <a href="today.html" class="active"><span>🏠</span>Сегодня</a>
   <a href="index.html"><span>📦</span>Учёт</a>
   <a href="fin.html"><span>💼</span>Финансы</a>
+  <a href="budget.html"><span>💰</span>Бюджет</a>
   <a href="cash.html"><span>🛵</span>Скутер</a>
   <a href="stats.html"><span>📈</span>Отчёты</a>
   <a href="plan.html"><span>📋</span>План</a>
@@ -133,6 +135,13 @@ function render() {
   $("cPay").innerHTML = `<h2>Пора оплатить <a href="fin.html">Финансы →</a></h2>` + (pay.length
     ? pay.map(p => row("fin.html", `${p.icon} ${esc(p.title)}`, p.den ? (p.late ? "⚠️ срок был " + p.den + "-го" : "до " + p.den + "-го") : "", fmt(p.sum) + " лей")).join("")
     : `<div class="empty">Ничего срочного ✅</div>`);
+
+  // 3b. Бюджет месяца: тот же расчёт, что на вкладке «Бюджет» (Calc.budget)
+  const bg = Calc.budget(ym);
+  $("cBudget").innerHTML = `<h2>Бюджет <a href="budget.html">Бюджет →</a></h2>` + (bg.cats.length
+    ? `<div class="row" style="border:0;padding-top:0"><span>Можно тратить в день<small>осталось в лимитах ${fmt(Math.round(bg.varLeft))} · дней: ${bg.daysLeft}</small></span><b class="big" style="font-size:20px">${fmt(Math.floor(bg.perDay))}</b></div>`
+      + bg.cats.filter(c => c.st !== "g").slice(0, 3).map(c => row("budget.html", `${c.st === "r" ? "🔴" : "🟡"} ${esc(c.name)}`, `${fmt(c.spent)} из ${fmt(c.limit)}`, c.pct + "%")).join("")
+    : `<div class="empty">Лимитов нет — <a href="budget.html" style="color:var(--accent)">поставить</a></div>`);
 
   // 4. Скутер
   const sc = Calc.scWanted(ym);
