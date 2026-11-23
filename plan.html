@@ -238,6 +238,8 @@
     <label>Автозадачи из «Финансов» и «Скутера»</label>
     <div id="autoList"></div>
     <div class="hint">Выключенное не создаётся в плане. На странице «Сегодня» скутер показывается всегда.</div>
+    <label>Кошелёк общего котла (баланс и движение берутся из «Финансов»)</label>
+    <select id="cfgPot"></select>
     <label>Скутер: предлагать задачу за (км до замены)</label>
     <input id="cfgKm" type="number" inputmode="numeric" placeholder="300">
     <label>и за (дней до срока документа или замены по месяцам)</label>
@@ -447,6 +449,23 @@
     </div>`;
   }
 
+  // Общий котёл из «Финансов»: баланс кошелька и его движение за месяц ym (какой кошелёк — в настройках плана)
+  function potWalletInfo(ym) {
+    const cfg = AppStorage.get("plan_cfg", {}) || {}, w = cfg.potWallet, ws = State.getWallets() || {};
+    if (!w || !(w in ws)) return null;
+    let inn = 0, out = 0;
+    (State.getOps() || []).forEach(z => {
+      if (!z || typeof z !== "object" || !String(z.data || "").startsWith(ym)) return;
+      const s = +z.summa || 0, napr = String(z.napr || "");
+      if (z.tip === "Доход") { if (z.koshel === w) inn += s; }
+      else if (z.tip === "Перевод") { if (z.kuda === w) inn += s; if (z.koshel === w) out += s; }
+      else if (z.tip === "Трата") { if (z.koshel === w) out += s; }
+      else if (z.tip === "Кредит" || z.tip === "Ломбард" || z.tip === "Кредитка") { if (z.koshel === w && napr === "платёж") out += s; }
+      else if (z.tip === "Долг") { if (z.koshel === w) { if (napr.includes("вернул я")) out += s; else if (napr.includes("вернули мне")) inn += s; } }
+    });
+    return { w, bal: +ws[w] || 0, inn, out };
+  }
+
   function updateTotals() {
     const incSecs = P.sections.filter(isIncSec);
     const all = P.sections.filter(s => !isIncSec(s)).flatMap(s => s.tasks);
@@ -481,9 +500,13 @@
     const grp = (isInc, isPot) => P.sections.filter(s => !!s.income === isInc && !!s.pot === isPot).flatMap(s => s.tasks);
     const sumBy = (arr, fn) => arr.reduce((a, t) => a + fn(t), 0);
     const planOf = t => num(t.plan);
-    const potSec = P.sections.some(s => s.pot);
-    $("totPotWrap").style.display = potSec ? "" : "none";
-    if (potSec) {
+    const potSec = P.sections.some(s => s.pot), pw = potWalletInfo(P.ym);
+    $("totPotWrap").style.display = (potSec || pw) ? "" : "none";
+    if (pw) {
+      $("totPot").textContent = fmt(pw.bal) + " лей";
+      $("totPotWrap").classList.toggle("neg", pw.bal < 0);
+      $("totPotSub").textContent = `кошелёк «${pw.w}» сейчас · за месяц пришло ${fmt(pw.inn)}, ушло ${fmt(pw.out)}`;
+    } else if (potSec) {
       const pin = sumBy(grp(true, true), factOf), pout = sumBy(grp(false, true), factOf), poutPlan = sumBy(grp(false, true), planOf);
       $("totPot").textContent = fmt(pin - pout) + " лей";
       $("totPotWrap").classList.toggle("neg", pin - pout < 0);
@@ -904,6 +927,9 @@
     const cfg = AppStorage.get("plan_cfg", {}) || {};
     $("cfgKm").value = cfg.scKm != null ? cfg.scKm : "";
     $("cfgDays").value = cfg.scDays != null ? cfg.scDays : "";
+    const vals = AppStorage.get("valyuty", {}) || {};
+    const wl = Object.keys(State.getWallets() || {}).filter(w => !vals[w]);
+    $("cfgPot").innerHTML = `<option value="">— не выбран —</option>` + wl.map(w => `<option value="${esc(w)}"${w === cfg.potWallet ? " selected" : ""}>${esc(w)}</option>`).join("");
     $("setModal").classList.add("on");
   }
   function closeSettings() { $("setModal").classList.remove("on"); }
@@ -925,6 +951,7 @@
     const cfg = {}, km = $("cfgKm").value.trim(), dd = $("cfgDays").value.trim();
     if (km !== "") cfg.scKm = Math.max(0, +km || 0);
     if (dd !== "") cfg.scDays = Math.max(0, +dd || 0);
+    if ($("cfgPot").value) cfg.potWallet = $("cfgPot").value;
     AppStorage.set("plan_cfg", cfg);
     P.goal = $("sGoal").value; P.checkpoint = $("sCheck").value;
     syncAllFinance(); persist(); closeSettings(); render();
