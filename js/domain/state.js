@@ -32,7 +32,7 @@
         setWallets(w) { AppStorage.set("wallets", w); },
         
         // Категории (трат и доходов)
-        getCategories() { return AppStorage.get("categories", { expense: ["Продукты", "Транспорт", "Скутер"], income: ["Зарплата", "Чаевые"] }); },
+        getCategories() { return AppStorage.get("categories", { expense: ["Продукты", "Транспорт", "Развлечения", "Жильё", "Коммуналка", "Связь", "Здоровье", "Одежда", "Кафе", "Прочее"], income: ["Зарплата", "Подарки", "Прочее"] }); },
         setCategories(c) { AppStorage.set("categories", c); },
         
         // Долги и цели
