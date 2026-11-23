@@ -120,7 +120,7 @@
 
 
     // ===== Из «Плана»: общие функции (раньше жили в plan.html) =====
-    const curYm = () => UI.date.local().slice(0, 7);
+    const curYm = () => UI.date.month();
     const pnum = v => parseFloat(String(v || "").replace(/\s/g, "").replace(",", ".")) || 0;
     const isAuto = t => !!t.src && t.src !== "manual";
   // Приводим дату к YYYY-MM-DD (поддерживает и DD.MM.YYYY)
@@ -210,9 +210,9 @@
   ];
   const SC_KM_SOON = 300; // за сколько км до замены предлагать задачу
   const SC_DAYS_SOON = 30; // за сколько дней до срока предлагать задачу
-  const fmtD = ds => String(ds || "").split("-").reverse().join(".");
-  const daysBetween = (a, b) => Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000);
-  const addDaysStr = (ds, n) => { const d = new Date(ds + "T12:00:00"); d.setDate(d.getDate() + n); return UI.date.local(d); };
+  const fmtD = ds => UI.date.ru(ds);
+  const daysBetween = (a, b) => UI.date.diff(a, b);
+  const addDaysStr = (ds, n) => UI.date.add(ds, n);
   function addMonthsStr(ds, n) {
     const [y, m, d] = ds.split("-").map(Number);
     const dt = new Date(y, m - 1 + n, 1);
@@ -333,6 +333,90 @@
     // Список всех возможных автозадач скутера (для настроек плана)
     const scItems = () => SC_COMPONENTS.map(c => ({ id: "sc_comp_" + c.id, title: c.title })).concat(SC_OFFICIALS.map(o => ({ id: "sc_off_" + o.id, title: o.title })));
 
-    global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems, lombard,
-        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue };
+    // ===== Бюджет месяца (единый расчёт для «Бюджета» и «Сегодня») =====
+  // Служебные «категории» процентов входят в платежи по кредитам/картам/ломбарду — лимитов на них не ставим
+  const SYS_CATS = ["💳 Проценты по кредиткам", "🏛 Проценты по кредитам", "🥇 Проценты по ломбарду"];
+  function budgetCfg() {
+    const c = AppStorage.get("budget_cfg", {}) || {};
+    return { salary: c.salary == null || c.salary === "" ? null : UI.num(c.salary), extra: UI.num(c.extra), save: UI.num(c.save) };
+  }
+  function budgetLimits() {
+    const b = AppStorage.get("byudzhety", {}) || {}, o = {};
+    Object.keys(b).forEach(k => { if (UI.num(b[k]) > 0) o[k] = UI.num(b[k]); });
+    return o;
+  }
+  // { "ГГГГ-ММ": { категория: сумма } } — по тем же правилам, что «Отчёты» (normOp)
+  function expenseByMonth() {
+    const out = {};
+    ops().filter(isExpense).forEach(o => {
+      const m = o.date.slice(0, 7); if (!m || !o.cat) return;
+      const t = out[m] = out[m] || {};
+      t[o.cat] = UI.r2((t[o.cat] || 0) + Math.abs(+o.amount || 0));
+    });
+    return out;
+  }
+  function expectedSalary(m, cfg) {
+    const accrued = salary(m).accrued, cur = curYm();
+    if (m < cur) return { v: accrued, src: "начислено по дням" };
+    if (cfg.salary != null) return { v: Math.max(cfg.salary, m === cur ? accrued : 0), src: "задано вручную" };
+    const prev = [1, 2, 3, 4, 5, 6].map(i => salary(UI.date.shift(cur, -i)).accrued).filter(v => v > 0).slice(0, 3);
+    const avg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
+    if (m === cur && accrued > avg) return { v: accrued, src: "уже начислено" };
+    return { v: Math.round(avg), src: prev.length ? "среднее за " + prev.length + " мес." : "нет данных — задайте вручную" };
+  }
+  function budget(m) {
+    m = m || curYm();
+    const cfg = budgetCfg(), limits = budgetLimits(), today = UI.date.local(), cur = curYm();
+    const dim = UI.date.daysIn(m);
+    const dom = m < cur ? dim : m > cur ? 0 : +today.slice(8, 10);
+    const daysLeft = m < cur ? 0 : m > cur ? dim : dim - dom + 1;
+    const frac = dom / dim;
+
+    const byM = expenseByMonth(), spent = byM[m] || {};
+    const sal = expectedSalary(m, cfg);
+    const otherIncome = Math.max(cfg.extra, month(m).income);
+    const income = sal.v + otherIncome;
+
+    // обязательные платежи (кредиты / карты / ломбард): план и факт как в «Плане»
+    const OPS = planOps();
+    const fixed = finWanted().filter(w => w.agg).map(w => {
+      const fact = Math.round(autoFact(w.src, m, OPS));
+      return { title: w.title, note: w.note, plan: w.plan, fact, left: Math.max(0, w.plan - fact) };
+    });
+    // регулярные траты: если у категории есть лимит — они уже внутри лимита, иначе считаем отдельно
+    const regs = (AppStorage.get("regulyarnye", []) || []).filter(r => r.tip === "Трата" && r.nazvanie).map(r => ({
+      title: "🔁 " + r.nazvanie, note: r.den ? r.den + "-го числа" : "", plan: Math.round(UI.num(r.summa)), kat: r.kat, inLimit: limits[r.kat] != null
+    }));
+    const fixedPlan = fixed.reduce((a, x) => a + x.plan, 0) + regs.filter(r => !r.inLimit).reduce((a, x) => a + x.plan, 0);
+    const limitsSum = Object.keys(limits).reduce((a, k) => a + limits[k], 0);
+    const free = UI.r2(income - fixedPlan - limitsSum - cfg.save);
+
+    const cats = Object.keys(limits).map(k => {
+      const s = spent[k] || 0, l = limits[k], p = s / l;
+      const proj = frac >= 0.15 && m === cur ? s / frac : null;
+      let st = "g";
+      if (s >= l) st = "r"; else if (p >= 0.8 || (proj != null && proj > l)) st = "o";
+      return { name: k, spent: s, limit: l, pct: Math.round(p * 100), proj, st, left: Math.max(0, l - s) };
+    }).sort((a, b) => b.pct - a.pct);
+    const noLimit = Object.keys(spent).filter(k => limits[k] == null && !SYS_CATS.includes(k))
+      .map(k => ({ name: k, spent: spent[k] })).sort((a, b) => b.spent - a.spent);
+    const totalSpent = UI.r2(Object.keys(spent).reduce((a, k) => a + spent[k], 0));
+    const varLeft = cats.reduce((a, c) => a + c.left, 0);
+
+    // предложение лимитов: среднее по 3 предыдущим месяцам +5%
+    const hist = [1, 2, 3].map(i => byM[UI.date.shift(m, -i)]).filter(Boolean), suggest = {};
+    if (hist.length) {
+      const all = new Set(); hist.forEach(h => Object.keys(h).forEach(k => all.add(k)));
+      all.forEach(k => {
+        if (SYS_CATS.includes(k) || limits[k] != null) return;
+        const v = Math.ceil(hist.reduce((a, h) => a + (h[k] || 0), 0) / hist.length * 1.05 / 10) * 10;
+        if (v >= 10) suggest[k] = v;
+      });
+    }
+    return { m, cfg, limits, dim, dom, daysLeft, frac, sal, otherIncome, income, fixed, regs, fixedPlan, limitsSum, save: cfg.save, free,
+      cats, noLimit, totalSpent, varLeft, perDay: daysLeft > 0 ? varLeft / daysLeft : 0, suggest, histN: hist.length };
+  }
+
+  global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems, lombard,
+        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue, budget, budgetCfg, budgetLimits };
 })(window);
