@@ -72,4 +72,12 @@
     };
 
     global.UI = UI;
+
+    // Офлайн-режим: регистрируем сервисный работник на любой странице
+    // (start_url = today.html, раньше он ставился только при заходе на index.html)
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+            navigator.serviceWorker.register("./sw.js").catch(err => console.warn("SW:", err));
+        });
+    }
 })(window);
