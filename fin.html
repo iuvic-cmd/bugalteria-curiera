@@ -34,6 +34,7 @@ label{font-size:13px;color:var(--text-dim);display:block;margin-top:6px}
 <a href="today.html"><span>🏠</span>Сегодня</a>
 <a href="index.html"><span>📦</span>Учёт</a>
 <a href="fin.html" class="active"><span>💼</span>Финансы</a>
+  <a href="budget.html"><span>💰</span>Бюджет</a>
 <a href="cash.html"><span>🛵</span>Скутер</a>
 <a href="stats.html"><span>📈</span>Отчёты</a>
    <a href="plan.html"><span>📋</span>План</a>
@@ -117,12 +118,6 @@ function toast(t){Notify.show(t)}
 const err=e=>Notify.error(typeof e==="string"?e:e.message);
 
 /* ---- логика ---- */
-function rec(tip,s,w,o){
-  const z=Object.assign({id:nid(),data:nowS(),tip,summa:s,koshel:w},o);
-  if(w&&cur(w)!=="MDL"&&["Трата","Доход","Корректировка"].includes(tip))z.baz=r2(s*kurs(cur(w)));
-  Object.keys(z).forEach(k=>{if(z[k]===""||z[k]==null)delete z[k]});
-  S.istorija.push(z);save()}
-
 function syncMoney(){
   const c=State.getCategories()||{};
   S.kohelki=clone(State.getWallets());
@@ -191,13 +186,7 @@ function opMenu(id){const z=ops().find(x=>x.id===id),it=[];if(!z)return;
   if(["Кредит","Ломбард","Долг","Цель","Конвертация"].includes(z.tip))it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию? Деньги и остаток вернутся.",()=>undo(id))]);
   if(it.length)mm(esc(z.tip)+" · "+fmt(z.summa),it)}
 function editOp(id){const z=ops().find(x=>x.id===id),L=z.tip==="Трата"?S.kat_trat:S.kat_dohodov;
-  mini("Изменить",[["k","Категория",L.includes(z.kat)?L:L.concat(z.kat),z.kat],["s","Сумма",null,z.summa,1],["d","Дата",null,(z.data||"").slice(0,10),0,"date"],["w","Кошелёк",W(),z.koshel],["n","Заметка",null,z.zametka||""]],v=>{
-    const s=pos(v.s),sg=z.tip==="Трата"?-1:1,B=Object.assign({},S.kohelki);B[z.koshel]=r2(B[z.koshel]-sg*z.summa);B[v.w]=r2(B[v.w]+sg*s);
-    if(B[z.koshel]<0||B[v.w]<0)throw"Не хватит денег на кошельке";S.kohelki=B;
-    const mp=z.tip==="Трата"?S.traty:S.dohody;mp[z.kat]=Math.max(0,r2((mp[z.kat]||0)-z.summa));mp[v.k]=r2((mp[v.k]||0)+s);
-    Object.assign(z,{kat:v.k,summa:s,koshel:v.w,zametka:v.n});if(!z.zametka)delete z.zametka;
-    if(/^\d{4}-\d{2}-\d{2}$/.test(v.d))z.data=v.d+" "+(((z.data||"").slice(11))||"12:00");
-    delete z.baz;if(cur(v.w)!=="MDL")z.baz=r2(s*kurs(cur(v.w)))})}
+  mini("Изменить",[["k","Категория",L.includes(z.kat)?L:L.concat(z.kat),z.kat],["s","Сумма",null,z.summa,1],["d","Дата",null,(z.data||"").slice(0,10),0,"date"],["w","Кошелёк",W(),z.koshel],["n","Заметка",null,z.zametka||""]],v=>{FinanceAPI.opEdit({id,category:v.k,amount:v.s,date:v.d,wallet:v.w,note:v.n});load()})}
 
 /* ---- навигация ---- */
 function innerNav(){
@@ -211,7 +200,7 @@ const back=(t,to="sect")=>`<button class="bt" onclick="go('${to}')">← Наза
 /* ---- главная ---- */
 function home(){
   const ws=W(),tot=ws.reduce((a,w)=>a+S.kohelki[w]*kurs(cur(w)),0),ym=nowS().slice(0,7);let sp=0,inc=0;
-  ops().forEach(z=>{if((z.data||"").startsWith(ym)&&z.tip==="Доход")inc+=z.baz??z.summa});sp=Calc.month(ym).expenses;
+  Calc.ops().forEach(o=>{if(o.kind==="income"&&o.date.startsWith(ym))inc+=Math.abs(o.amount)});sp=Calc.month(ym).expenses;
   const last=byDate().slice(0,5).map(row).join("")||'<div class="mut">Пока нет операций</div>';
   const pm=(()=>{const d=new Date();d.setDate(1);d.setMonth(d.getMonth()-1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")})();
   const salRow=m=>{const x=Calc.salary(m),a=x.accrued,r=x.received;return a>0||r>0?`<div class="row" style="cursor:default"><span>💼 ${m.slice(5)}.${m.slice(0,4)} <span class="mut">начислено ${fmt(a)}</span></span><b class="${x.due>0?"r":"g"}">${x.due>0?"ещё "+fmt(x.due):(x.closed?"закрыт ✅":"получено ✅")}</b></div>`:""};
@@ -234,25 +223,17 @@ function wal(){
   `<div class="card"><h2>Кошельки · нажми для действий</h2>${W().map((w,i)=>`<div class="row" onclick="walMenu(${i})"><span>✎ ${esc(w)} <span class="mut">${esc(cur(w))}</span></span><b>${fmt(S.kohelki[w])} ${esc(sym(w))}</b></div>`).join("")}${S.kartki.length?`<div class="mut" style="margin:12px 0 2px">💳 Кредитные карты · не входят в общий итог</div>`+S.kartki.map(c=>{const bl=r2(c.limit-c.dolg);return `<div class="row" onclick="go('cards')"><span>💳 ${esc(c.nazvanie)} <span class="mut">долг ${fmt(c.dolg)}</span></span><b class="${bl<0?"r":""}">${bl<0?"−":""}${fmt(Math.abs(bl))} лей</b></div>`}).join(""):""}</div>
   ${cs.length?`<div class="card"><h2>Курсы к лею</h2>${cs.map(c=>`<label>1 ${esc(c)} =</label><input inputmode="decimal" value="${S.kursy[c]||""}" onchange="setRate('${esc(c)}',this.value)">`).join("")}</div>`:""}
   <div class="card"><h2>Новый кошелёк</h2><input id="nw" placeholder="Название"><select id="nc"><option>MDL</option><option>USD</option><option>EUR</option></select><input id="nr" inputmode="decimal" placeholder="Курс к лею (для USD/EUR)"><button class="bt pri" onclick="addW()">Добавить</button></div>`}
-function setRate(c,v){const x=num(v);if(x>0){S.kursy[c]=x;save();render();toast("Курс сохранён")}}
-function addW(){const n=$("nw").value.trim(),c=$("nc").value,r=num($("nr").value);
-  if(!n)return toast("Введи название");if(n in S.kohelki)return toast("Такой кошелёк уже есть");
-  if(c!=="MDL"&&!(r>0)&&!(S.kursy[c]>0))return toast("Укажи курс");
-  S.kohelki[n]=0;if(c!=="MDL"){S.valyuty[n]=c;if(r>0)S.kursy[c]=r}save();render();toast("Кошелёк добавлен")}
+function setRate(c,v){try{FinanceAPI.rateSet(c,v);load();render();toast("Курс сохранён")}catch(e){err(e)}}
+function addW(){try{FinanceAPI.walletAdd({name:$("nw").value,currency:$("nc").value,rate:num($("nr").value)});load();render();toast("Кошелёк добавлен")}catch(e){err(e)}}
 function walMenu(i){const w=W()[i];mm(`${esc(w)}: ${fmt(S.kohelki[w])} ${esc(sym(w))}`,[["⚖️ Корректировка баланса",()=>corr(i)],["✏️ Переименовать",()=>ren(i)],["🗑 Удалить",()=>delW(i)]])}
 function corr(i){const w=W()[i];mini("Корректировка: "+esc(w),[["r","Реальный остаток ("+sym(w)+")",null,S.kohelki[w],1],["n","Заметка"]],v=>{FinanceAPI.adjust({wallet:w,actual:v.r,note:v.n});load()},"Сейчас в учёте: "+fmt(S.kohelki[w]))}
-function ren(i){const w=W()[i];mini("Переименовать",[["n","Название",null,w]],v=>{
-  const n=v.n.replace(/\s+/g," ");if(!n)throw"Пустое название";if(n!==w&&n in S.kohelki)throw"Такой кошелёк уже есть";
-  const o={};W().forEach(k=>o[k===w?n:k]=S.kohelki[k]);S.kohelki=o;
-  ops().forEach(z=>{if(z.koshel===w)z.koshel=n;if(z.kuda===w)z.kuda=n});
-  if(S.valyuty[w]){S.valyuty[n]=S.valyuty[w];delete S.valyuty[w]}
-  S.regulyarnye.concat(S.kredity).forEach(r=>{if(r.koshel===w)r.koshel=n});if(S.lombard_info.koshel===w)S.lombard_info.koshel=n;Object.values(S.celi).forEach(g=>{if(g.koshel===w)g.koshel=n});S.kartki.forEach(c=>{if(c.koshel===w)c.koshel=n})})}
-function delW(i){const w=W()[i];if(S.kohelki[w]!==0)return toast("Сначала обнули баланс (корректировка или перевод)");const gl=Object.keys(S.celi).find(k=>S.celi[k].koshel===w);if(gl)return toast("Кошелёк привязан к цели «"+gl+"»");const kl=S.kartki.find(c=>c.koshel===w);if(kl)return toast("Кошелёк привязан к карте «"+kl.nazvanie+"»");ask("Удалить кошелёк «"+w+"»?",()=>{delete S.kohelki[w];delete S.valyuty[w];save();render()})}
+function ren(i){const w=W()[i];mini("Переименовать",[["n","Название",null,w]],v=>{FinanceAPI.walletRename(w,v.n);load()})}
+function delW(i){const w=W()[i];ask("Удалить кошелёк «"+w+"»?",()=>{try{FinanceAPI.walletRemove(w);load();render()}catch(e){err(e)}})}
 
 /* ---- разделы и «ещё» ---- */
 function sect(){
   return innerNav()+`<div class="card"><h2>Разделы</h2>
-    <button class="bt" onclick="go('bud')">💳 Бюджеты</button>
+    <button class="bt" onclick="location.href='budget.html'">💰 Бюджет месяца</button>
     <button class="bt" onclick="go('debt')">🤝 Долги</button>
     <button class="bt" onclick="go('cred')">🏛 Кредиты и ломбард</button>
     <button class="bt" onclick="go('cards')">💳 Кредитные карты</button>
@@ -268,11 +249,8 @@ function more(){
   `<div class="card"><button class="bt pri" onclick="go('hist')">🕘 История</button></div>
   <div class="card"><h2>Копия данных</h2><div class="mut">Экспорт, импорт, откат из снимка и сброс данных — в одном месте: «Настройки». Там же копия всех разделов приложения.</div><button class="bt pri" style="margin-top:8px" onclick="location.href='settings.html'">⚙ Открыть Настройки</button></div>`}
 
-/* ---- бюджеты ---- */
-function bud(){const ym=nowS().slice(0,7),sp=k=>r2(ops().filter(z=>z.tip==="Трата"&&z.kat===k&&(z.data||"").startsWith(ym)).reduce((a,z)=>a+(z.baz??z.summa),0));
-  return innerNav()+back("Бюджеты")+`<div class="card">${Object.keys(S.byudzhety).map((k,i)=>{const l=S.byudzhety[k],s=sp(k),p=Math.round(s/l*100);return `<div class="row" style="cursor:default"><div>${p>=100?"🔴":p>=80?"🟡":"🟢"} ${esc(k)}<div class="mut">${fmt(s)} из ${fmt(l)} (${p}%)</div></div><b onclick="delB(${i})" style="cursor:pointer">✕</b></div>`}).join("")||'<div class="mut">Лимитов нет</div>'}</div><button class="bt pri" onclick="setB()">Установить лимит</button>`}
-function delB(i){delete S.byudzhety[Object.keys(S.byudzhety)[i]];save();render()}
-function setB(){mini("Лимит на месяц",[["k","Категория",S.kat_trat],["l","Лимит",null,"",1]],v=>{S.byudzhety[v.k]=pos(v.l)})}
+/* ---- бюджет: теперь отдельная вкладка «Бюджет» (лимиты хранятся там же — ключ byudzhety) ---- */
+function bud(){return innerNav()+back("Бюджет")+`<div class="card"><div class="mut">Бюджет — отдельная вкладка: лимиты по категориям, дневной остаток и платежи месяца.</div><button class="bt pri" style="margin-top:8px" onclick="location.href='budget.html'">💰 Открыть бюджет</button></div>`}
 
 /* ---- долги ---- */
 function debt(){const o=S.dolgi.filter(d=>d.ostatok>0);return innerNav()+back("Долги")+`<div class="card">${o.map(d=>`<div class="row" onclick="payD(${d.id})"><div>${d.napr==="Я должен"?"🔴":"🟢"} ${esc(d.kto)}<div class="mut">${esc(d.napr)} · ${esc((d.data||"").slice(0,10))}${d.zametka?" · "+esc(d.zametka):""}</div></div><b>${fmt(d.ostatok)} ${esc(ds(d))}</b></div>`).join("")||'<div class="mut">Открытых долгов нет</div>'}</div><div class="mut">Нажми на долг, чтобы погасить.</div><button class="bt pri" onclick="newD()">Новый долг</button>`}
@@ -326,28 +304,19 @@ function regMenu(i){const r=S.regulyarnye[i],it=[],fin=()=>{r.posl=nowS().slice(
 /* ---- категории ---- */
 function cat(){const L=(t,a)=>`<div class="card"><h2>${t}</h2>`+a.map((k,i)=>`<div class="row" onclick="chC('${t[0]}',${i})"><span>${esc(k)}</span><b>✎</b></div>`).join("")+"</div>";
   return innerNav()+back("Категории")+L("Траты",S.kat_trat)+L("Доходы",S.kat_dohodov)+`<button class="bt pri" onclick="newC()">Добавить категорию</button>`}
-function newC(){mini("Новая категория",[["t","Тип",["Траты","Доходы"]],["n","Название"]],v=>{const a=v.t==="Траты"?S.kat_trat:S.kat_dohodov,n=v.n.replace(/\s+/g," ");
-  if(!n)throw"Пустое название";if(a.some(x=>x.toLowerCase()===n.toLowerCase()))throw"Уже есть такая категория";a.push(n)})}
-function chC(t,i){const tr=t==="Т",a=tr?S.kat_trat:S.kat_dohodov,o=a[i],tip=tr?"Трата":"Доход",others=a.filter(x=>x!==o);
+function newC(){mini("Новая категория",[["t","Тип",["Траты","Доходы"]],["n","Название"]],v=>{FinanceAPI.categoryAdd(v.t==="Траты"?"expense":"income",v.n);load()})}
+function chC(t,i){const tr=t==="Т",kind=tr?"expense":"income",a=tr?S.kat_trat:S.kat_dohodov,o=a[i],tip=tr?"Трата":"Доход",others=a.filter(x=>x!==o);
   mm("«"+esc(o)+"»",[["✏️ Переименовать",()=>chC2(t,i)],["🗑 Удалить",()=>{
-    const n=ops().filter(z=>z.tip===tip&&z.kat===o).length,rm=()=>{a.splice(a.indexOf(o),1);if(tr)delete S.byudzhety[o];save();render()};
-    if(!n)return ask("Удалить категорию «"+o+"»?",rm);if(!others.length)return toast("Нет другой категории для переноса");
-    mini("Удалить «"+esc(o)+"»",[["c","Перенести операции ("+n+") в категорию",others]],v=>{
-      ops().forEach(z=>{if(z.tip===tip&&z.kat===o)z.kat=v.c});S.regulyarnye.forEach(r=>{if(r.tip===tip&&r.kat===o)r.kat=v.c});rm()})}]])}
-function chC2(t,i){const tr=t==="Т",a=tr?S.kat_trat:S.kat_dohodov,o=a[i],tip=tr?"Трата":"Доход";
-  mini("Категория «"+esc(o)+"»",[["n","Новое название",null,o]],v=>{const n=v.n.replace(/\s+/g," ");if(!n)throw"Пустое название";
-    if(n.toLowerCase()!==o.toLowerCase()&&a.some(x=>x.toLowerCase()===n.toLowerCase()))throw"Такая уже есть";
-    a[i]=n;ops().forEach(z=>{if(z.tip===tip&&z.kat===o)z.kat=n});if(tr&&o in S.byudzhety){S.byudzhety[n]=S.byudzhety[o];delete S.byudzhety[o]}
-    S.regulyarnye.forEach(r=>{if(r.tip===tip&&r.kat===o)r.kat=n})})}
+    const n=ops().filter(z=>z.tip===tip&&z.kat===o).length,rm=mv=>{try{FinanceAPI.categoryRemove(kind,o,mv);load();closeSheet();render()}catch(e){closeSheet();err(e)}};
+    if(!n)return ask("Удалить категорию «"+o+"»?",()=>rm());if(!others.length)return toast("Нет другой категории для переноса");
+    mini("Удалить «"+esc(o)+"»",[["c","Перенести операции ("+n+") в категорию",others]],v=>{FinanceAPI.categoryRemove(kind,o,v.c);load()})}]])}
+function chC2(t,i){const tr=t==="Т",kind=tr?"expense":"income",a=tr?S.kat_trat:S.kat_dohodov,o=a[i];
+  mini("Категория «"+esc(o)+"»",[["n","Новое название",null,o]],v=>{FinanceAPI.categoryRename(kind,o,v.n);load()})}
 
 /* ---- отчёты ---- */
 function rep(){
   const ym=nowS().slice(0,7),y=ym.slice(0,4),f=z=>RP==="m"?(z.data||"").startsWith(ym):RP==="y"?(z.data||"").startsWith(y):1;
-  const grp=t=>{const d={};ops().filter(z=>z.tip===t&&f(z)).forEach(z=>{const k=z.kat||"?";d[k]=r2((d[k]||0)+(z.baz??z.summa))});
-    if(t==="Трата"){
-      ops().filter(z=>(z.tip==="Кредит"||z.tip==="Ломбард")&&z.napr==="платёж"&&z.proc>0&&f(z)).forEach(z=>{const k=z.tip==="Кредит"?"🏛 Проценты по кредитам":"🥇 Проценты по ломбарду";d[k]=r2((d[k]||0)+z.proc)});
-      ops().filter(z=>z.tip==="Кредитка"&&(z.napr==="покупка"||z.napr==="проценты")&&f(z)).forEach(z=>{const k=z.napr==="проценты"?"💳 Проценты по кредиткам":(z.kat||"?");d[k]=r2((d[k]||0)+z.summa)})}
-    return d};
+  const grp=t=>{const d={},kd=t==="Доход"?"income":"expense";Calc.ops().filter(o=>o.kind===kd&&f({data:o.date})).forEach(o=>{const k=o.cat||"?";d[k]=r2((d[k]||0)+Math.abs(o.amount))});return d};
   const blk=(t,d)=>{const tot=Object.values(d).reduce((a,b)=>a+b,0);return `<div class="card"><h2>${t}: ${fmt(tot)} лей</h2>`+(Object.entries(d).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="cursor:default"><span>${esc(k)}</span><b>${fmt(v)} <span class="mut">${tot?Math.round(v/tot*100):0}%</span></b></div>`).join("")||"—")+"</div>"};
   const Wt=W().reduce((a,w)=>a+S.kohelki[w]*kurs(cur(w)),0),A=S.aktivy.reduce((a,x)=>a+x.ocenka,0),G=Object.values(S.celi).reduce((a,g)=>a+g.nakopleno,0),
     M=S.dolgi.reduce((a,d)=>a+(d.napr==="Мне должны"?1:-1)*d.ostatok*kurs(dv(d)),0),K=S.kredity.reduce((a,k)=>a+k.ostatok,0),L=S.lombard.reduce((a,b)=>a+b.ostatok,0),C=S.kartki.reduce((a,c)=>a+c.dolg,0);
