@@ -30,6 +30,7 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
   <h1 id="hdr">Сегодня</h1>
   <div class="sub" id="sub"></div>
   <div class="card" id="cDay"></div>
+  <div class="card" id="cOps"></div>
   <div class="card" id="cSalary"></div>
   <div class="card" id="cPay"></div>
   <div class="card" id="cBudget"></div>
@@ -121,6 +122,25 @@ function render() {
     <div class="sub" style="margin:0">🌙 ${rec ? +rec.night || 0 : 0} · 📦 ${rec ? +rec.ap || 0 : 0} · за месяц: ${M.totalOrders} зак. / ${fmt(M.salary)} лей</div>
     <div class="btns"><button class="btn btn-primary" onclick="addOrders(1,0)">＋1 🌙 Ночной</button><button class="btn btn-orange" onclick="addOrders(0,1)">＋1 📦 Единый</button></div>
     <button class="btn btn-gray" style="margin:8px 0 0;background:var(--border);color:var(--text)" onclick="undoLast()">↩ Отменить последний заказ</button>`;
+
+  // 1b. Доходы и расходы за сегодня (чаевые, находки, обед, кофе и т.д.) — из журнала «Финансов»
+  const dayOps = State.getOps()
+    .map(o => ({ o, n: Calc.normOp(o) }))
+    .filter(x => x.n && x.n.date === ds && (x.n.kind === "income" || x.n.kind === "expense"))
+    .sort((a, b) => String(b.o.data || "").localeCompare(String(a.o.data || "")));
+  const inc = UI.r2(dayOps.filter(x => x.n.kind === "income").reduce((t, x) => t + x.n.amount, 0));
+  const exp = UI.r2(dayOps.filter(x => x.n.kind === "expense").reduce((t, x) => t + x.n.amount, 0));
+  const net = UI.r2(inc - exp);
+  const opRows = dayOps.map(({ o, n }) => {
+    const tm = String(o.data || "").slice(11, 16);
+    const sub = [tm && tm !== "00:00" ? tm : "", o.koshel || "", o.zametka || ""].filter(Boolean).map(esc).join(" · ");
+    const isInc = n.kind === "income";
+    return row("fin.html", (isInc ? "🟢 " : "🔴 ") + esc(n.cat || (isInc ? "Доход" : "Расход")), sub,
+      `<span class="${isInc ? "ok" : "bad"}">${isInc ? "+" : "−"}${fmt(n.amount)}</span>`);
+  }).join("");
+  $("cOps").innerHTML = `<h2>Доходы и расходы за день <a href="fin.html">Финансы →</a></h2>` + (dayOps.length
+    ? `<div class="row" style="border:0;padding-top:0"><span>Итого за день<small>доход ${fmt(inc)} · расход ${fmt(exp)}</small></span><b class="big ${net >= 0 ? "ok" : "bad"}" style="font-size:20px">${net > 0 ? "+" : net < 0 ? "−" : ""}${fmt(Math.abs(net))}</b></div>` + opRows
+    : `<div class="empty">Сегодня операций нет</div>`);
 
   // 2. Зарплата
   const rows = [prevYm(ym), ym].map(m => {
