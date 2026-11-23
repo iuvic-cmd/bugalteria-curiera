@@ -303,7 +303,7 @@
     if (t.startsWith("{")) {
       const obj = JSON.parse(t);
       for (const k in obj) if (k.startsWith(PREFIX)) data[k] = obj[k];
-      return { data, failed };
+      return { data, failed, legacy: false };
     }
     t.split(/\r?\n/).forEach(line => {
       const m = line.match(/^([A-Za-z_]\w*)\s*=\s*(.+)$/);
@@ -311,18 +311,23 @@
       try { data[PREFIX + m[1]] = JSON.parse(pyToJson(m[2].trim())); }
       catch (e) { failed.push(m[1]); }
     });
-    return { data: legacy ? fromLegacy(data) : data, failed };
+    return { data: legacy ? fromLegacy(data) : data, failed, legacy };
   }
 
   function importFromText() {
     const text = document.getElementById("importBox").value.trim();
     if (!text) return Notify.error("Вставь данные");
     try {
-      const { data, failed } = parseBackup(text);
+      const { data, failed, legacy } = parseBackup(text);
       const keys = Object.keys(data);
       if (!keys.length) return Notify.error("В данных нет ключей приложения");
       if (!confirm(`Заменить текущие данные? Будет записано ключей: ${keys.length}.`)) return;
       if (!Backup.ensureSnapshot()) return;
+      // «Заменить»: сначала убираем ключи приложения, которых нет в копии (кроме снимка).
+      // Копия «Финансов» старого формата содержит только часть данных — её дописываем поверх.
+      if (!legacy) {
+        AppStorage.keys().forEach(n => { if (!/^(snap_|backup_)/.test(n) && !((PREFIX + n) in data)) AppStorage.remove(n); });
+      }
       keys.forEach(k => localStorage.setItem(k, JSON.stringify(data[k])));
       const warn = failed.length ? ` Не разобрано: ${failed.join(", ")}.` : "";
       document.getElementById("importStatus").textContent = `Импортировано ключей: ${keys.length}.${warn}`;
@@ -362,7 +367,7 @@
       "wallets", "ops", "categories",
       "traty", "dohody", "byudzhety", "celi", "dolgi", "regulyarnye", "kredity", "kartki",
       "valyuty", "kursy", "lombard", "lombard_info", "aktivy", "arhiv",
-      "debts", "goals"
+      "debts", "goals", "budget_cfg"
     ];
     else if (section === "cash") keysToRemove = ["scooter", "scooter_fuel", "mileage_log", "comp_oil", "comp_air_filter", "comp_belt", "comp_brakes", "scooter_expenses",
       "official_tech", "official_tax", "official_insurance", "scooter_undo"];
