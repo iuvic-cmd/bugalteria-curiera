@@ -138,6 +138,7 @@
     <a href="today.html"><span>🏠</span>Сегодня</a>
 <a href="index.html"><span>📦</span>Учёт</a>
     <a href="fin.html"><span>💼</span>Финансы</a>
+  <a href="budget.html"><span>💰</span>Бюджет</a>
     <a href="cash.html"><span>🛵</span>Скутер</a>
     <a href="stats.html"><span>📈</span>Отчёты</a>
     <a href="plan.html" class="active"><span>📋</span>План</a>
@@ -270,7 +271,7 @@
   const newId = () => "t_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const MONTHS = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
   const MN = ["январ", "феврал", "март", "апрел", "май", "июн", "июл", "август", "сентябр", "октябр", "ноябр", "декабр"];
-  const curYm = () => UI.date.local().slice(0, 7);
+  const curYm = () => UI.date.month();
   // Блок доходов: у раздела стоит income:true. Его задачи не входят в «расходы», а считаются отдельно.
   const isIncSec = s => !!(s && s.income);
   // Каждый блок явно помечен в данных: income (доходы/расходы) и pot (общий котёл/мои). Без флага блок «мой».
