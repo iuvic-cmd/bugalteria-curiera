@@ -84,7 +84,7 @@ try { Theme.init(); } catch (e) {}
 /* ============================================================
    Бюджет месяца — только отображение. Расчёты: Calc.budget (selectors.js),
    запись: FinanceAPI.limitSet / limitRemove / budgetConfigSet (finance-api.js).
-   Лимиты — общий ключ byudzhety (те же, что в «Финансах»); budget_cfg — параметры.
+   Бюджет хранится ПО МЕСЯЦАМ (ключ budgets_m: лимиты + параметры). Нет записи за месяц = «бюджет не создан».
    ============================================================ */
 const esc = UI.esc, fmt = UI.fmt, r2 = UI.r2, num = UI.num;
 const $ = id => document.getElementById(id);
@@ -121,6 +121,18 @@ function render() {
   $("ttl").textContent = ymTitle(ym);
   const B = compute(ym), isCur = ym === curYm(), isFuture = ym > curYm();
   let h = "";
+
+  // Бюджет этого месяца не создан — честно говорим об этом, чужие лимиты не подтягиваем
+  if (!B.exists) {
+    const src = B.copyFrom;
+    $("app").innerHTML = `<div class="card">
+      <h2>Бюджет не создан</h2>
+      <div class="mut" style="margin-bottom:12px">На ${esc(ymTitle(ym))} бюджет не создан: лимитов и параметров для этого месяца нет.${B.totalSpent > 0 ? ` Потрачено за месяц: <b>${fmt(B.totalSpent)}</b> лей.` : ""}</div>
+      ${src ? `<button class="btn btn-primary" onclick="createBudget('${src}')">📋 Скопировать из: ${esc(ymTitle(src))}</button>` : ""}
+      <button class="btn ${src ? "btn-line" : "btn-primary"}" onclick="createBudget(null)">＋ Создать пустой бюджет</button>
+    </div>`;
+    return;
+  }
 
   // 1. Итог распределения
   const parts = [
@@ -165,6 +177,7 @@ function render() {
       <div class="mut">${c.pct}% · ${c.spent >= c.limit ? "перерасход " + fmt(c.spent - c.limit) : "осталось " + fmt(c.limit - c.spent)}${isCur && c.proj != null ? " · прогноз ≈ " + fmt(Math.round(c.proj)) : ""}</div>
     </div>`;
   });
+  if (B.cats.length) h += `<div class="row" style="border-top:2px solid var(--border);font-weight:700"><div>Итого по категориям</div><b>${fmt(r2(B.cats.reduce((a, c) => a + c.spent, 0)))} / ${fmt(B.limitsSum)}</b></div>`;
   h += `<button class="btn btn-primary" style="margin-top:10px" onclick="editLimit(null)">＋ Лимит на категорию</button>`;
   const sn = Object.keys(B.suggest).length;
   if (sn) h += `<button class="btn btn-line" onclick="applySuggest()">✨ Предложить лимиты по средним тратам (${sn})</button>`;
@@ -184,13 +197,26 @@ function render() {
     B.regs.forEach(x => {
       h += `<div class="row"><div>${esc(x.title)}<div class="mut">${esc(x.note)}${x.inLimit ? (x.note ? " · " : "") + "внутри лимита «" + esc(x.kat) + "»" : ""}</div></div><b>${fmt(x.plan)}</b></div>`;
     });
+    h += `<div class="row" style="border-top:2px solid var(--border);font-weight:700"><div>Итого платежей в распределении${B.regs.some(x => x.inLimit) ? `<div class="mut" style="font-weight:400">регулярные траты «внутри лимита» уже входят в лимиты и здесь не суммируются</div>` : ""}</div><b>${fmt(B.fixedPlan)}</b></div>`;
     h += `</div>`;
   }
 
   // 6. Советы
   h += `<div class="card"><h2>💡 Советы</h2>${tips(B).map(s => `<div class="tip">${s}</div>`).join("")}</div>`;
 
+  h += `<button class="btn btn-line" style="color:var(--red)" onclick="deleteBudget()">🗑 Удалить бюджет этого месяца</button>`;
+
   $("app").innerHTML = h;
+}
+
+function createBudget(from) {
+  if (!guardAction("budget-create")) return;
+  try { FinanceAPI.budgetCreate(ym, from); Notify.show("Бюджет создан"); } catch (e) { Notify.error(e.message || String(e)); }
+  render();
+}
+function deleteBudget() {
+  if (!confirm("Удалить бюджет на " + ymTitle(ym) + "? Лимиты и параметры этого месяца пропадут (траты останутся).")) return;
+  FinanceAPI.budgetDelete(ym); render();
 }
 
 /* ---------- диалоги ---------- */
@@ -224,17 +250,17 @@ function expenseCats() {
 }
 
 function editLimit(name) {
-  const lim = Calc.budgetLimits();
+  const lim = Calc.budgetLimits(ym);
   if (name == null) {
     const free = expenseCats().filter(k => lim[k] == null);
     if (!free.length) return Notify.error("Лимиты уже стоят на всех категориях");
     modal("Новый лимит на месяц", [{ id: "k", label: "Категория", options: free, value: free[0] }, { id: "l", label: "Лимит, лей", ph: "например 800" }],
-      v => FinanceAPI.limitSet(v.k, v.l));
+      v => FinanceAPI.limitSet(v.k, v.l, ym));
   } else {
     const sg = compute(ym).suggest[name];
     modal("Лимит: " + name, [{ id: "l", label: "Лимит на месяц, лей", value: lim[name] != null ? lim[name] : "", ph: sg ? "≈ " + sg : "" }],
-      v => FinanceAPI.limitSet(name, v.l),
-      lim[name] != null ? { label: "🗑 Убрать лимит", fn: () => FinanceAPI.limitRemove(name) } : null);
+      v => FinanceAPI.limitSet(name, v.l, ym),
+      lim[name] != null ? { label: "🗑 Убрать лимит", fn: () => FinanceAPI.limitRemove(name, ym) } : null);
   }
 }
 
@@ -243,17 +269,17 @@ function applySuggest() {
   if (!keys.length) return;
   const txt = keys.map(k => k + ": " + fmt(B.suggest[k])).join("\n");
   if (!confirm("Поставить лимиты на основе средних трат за " + B.histN + " мес. (+5%)?\n\n" + txt)) return;
-  keys.forEach(k => { if (Calc.budgetLimits()[k] == null) FinanceAPI.limitSet(k, B.suggest[k]); });
+  keys.forEach(k => { if (Calc.budgetLimits(ym)[k] == null) FinanceAPI.limitSet(k, B.suggest[k], ym); });
   Notify.show("Лимитов добавлено: " + keys.length); render();
 }
 
 function openCfg() {
-  const c = Calc.budgetCfg();
-  modal("Параметры бюджета", [
+  const c = Calc.budgetCfg(ym);
+  modal("Параметры бюджета: " + ymTitle(ym), [
     { id: "salary", label: "Ожидаемая зарплата в месяц (пусто = авто по прошлым месяцам)", value: c.salary == null ? "" : c.salary },
     { id: "extra", label: "Прочие доходы в месяц (подработки, чаевые…)", value: c.extra || "" },
     { id: "save", label: "Откладывать в месяц", value: c.save || "" }
-  ], v => FinanceAPI.budgetConfigSet(v));
+  ], v => FinanceAPI.budgetConfigSet(v, ym));
 }
 
 $("prev").onclick = () => { ym = shiftYm(ym, -1); render(); };
