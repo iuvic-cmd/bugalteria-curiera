@@ -576,11 +576,12 @@
             const pick = k => c[k] !== undefined ? c[k] : old[k];
             const salary = pick("salary"), extra = pick("extra"), save = pick("save");
             const salMode = pick("salMode") || "avg", extraMode = pick("extraMode") || "auto";
+            const extraNote = String(pick("extraNote") == null ? "" : pick("extraNote")).trim().slice(0, 200);
             const blank = x => x === "" || x == null;
             const n = x => blank(x) ? 0 : UI.num(x);
             if (n(extra) < 0 || n(save) < 0 || (!blank(salary) && UI.num(salary) < 0)) throw new Error("Суммы не могут быть отрицательными");
             if (!["avg", "actual"].includes(salMode) || !["auto", "fact", "manual", "none"].includes(extraMode)) throw new Error("Неизвестный режим");
-            e.cfg = { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)), salMode, extraMode };
+            e.cfg = { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)), salMode, extraMode, extraNote };
             AppStorage.set("budgets_m", B);
         },
 
