@@ -151,7 +151,7 @@ function render() {
     <div class="legend">${parts.map(p => `<span style="--c:${p.c}">${p.n}: ${fmt(p.v)}</span>`).join("")}</div>
     <div class="row" style="margin-top:8px"><div>💵 Зарплата<div class="mut">${esc(B.sal.src)}</div></div><b>${fmt(B.sal.v)}</b></div>
     ${ym < curYm() ? "" : `<div class="seg"><button class="${B.cfg.salMode === "avg" ? "on" : ""}" onclick="setSalMode('avg')">Среднее</button><button class="${B.cfg.salMode === "actual" ? "on" : ""}" onclick="setSalMode('actual')">Фактическая</button></div>`}
-    <div class="row tap" onclick="openExtra()"><div>➕ Прочие доходы<div class="mut">${esc(B.otherSrc)}${B.factIncome > 0 ? " · факт: " + fmt(B.factIncome) : ""}</div></div><b>${fmt(B.otherIncome)}</b></div>
+    <div class="row tap" onclick="openExtra()"><div>➕ Прочие доходы<div class="mut">${esc(B.otherSrc)}${B.factIncome > 0 ? " · факт: " + fmt(B.factIncome) : ""}</div>${B.cfg.extraNote ? `<div class="mut">💬 ${esc(B.cfg.extraNote)}</div>` : ""}</div><b>${fmt(B.otherIncome)}</b></div>
     <button class="btn btn-line" style="margin-top:10px;margin-bottom:0" onclick="openCfg()">⚙ Параметры (зарплата, откладывание)</button>
   </div>`;
 
@@ -290,8 +290,9 @@ function openExtra() {
   const c = Calc.budgetCfg(ym);
   modal("Прочие доходы: " + ymTitle(ym), [
     { id: "extraMode", label: "Что учитывать", options: Object.values(EXTRA_MODES), value: EXTRA_MODES[c.extraMode] },
-    { id: "extra", label: "Заданная сумма в месяц (подработки, чаевые…)", value: c.extra || "" }
-  ], v => FinanceAPI.budgetConfigSet({ extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra }, ym));
+    { id: "extra", label: "Заданная сумма в месяц (подработки, чаевые…)", value: c.extra || "" },
+    { id: "extraNote", label: "Комментарий", text: true, value: c.extraNote, ph: "например: подработка по выходным, премия…" }
+  ], v => FinanceAPI.budgetConfigSet({ extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra, extraNote: v.extraNote }, ym));
 }
 function openCfg() {
   const c = Calc.budgetCfg(ym);
@@ -300,8 +301,9 @@ function openCfg() {
     { id: "salary", label: "Ожидаемая зарплата (пусто = среднее за прошлые месяцы; работает в режиме «Среднее»)", value: c.salary == null ? "" : c.salary },
     { id: "extraMode", label: "Прочие доходы: что учитывать", options: Object.values(EXTRA_MODES), value: EXTRA_MODES[c.extraMode] },
     { id: "extra", label: "Заданная сумма прочих доходов в месяц", value: c.extra || "" },
+    { id: "extraNote", label: "Комментарий к прочим доходам", text: true, value: c.extraNote, ph: "например: подработка по выходным, премия…" },
     { id: "save", label: "Откладывать в месяц", value: c.save || "" }
-  ], v => FinanceAPI.budgetConfigSet({ salMode: modeKey(SAL_MODES, v.salMode), salary: v.salary, extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra, save: v.save }, ym));
+  ], v => FinanceAPI.budgetConfigSet({ salMode: modeKey(SAL_MODES, v.salMode), salary: v.salary, extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra, extraNote: v.extraNote, save: v.save }, ym));
 }
 
 $("prev").onclick = () => { ym = shiftYm(ym, -1); render(); };
