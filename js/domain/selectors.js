@@ -352,6 +352,12 @@
       extraMode: ["fact", "manual", "none"].includes(c.extraMode) ? c.extraMode : "auto"
     };
   }
+  // Комментарии к лимитам: { категория: текст } (хранятся рядом с лимитами месяца, на расчёты не влияют)
+  function budgetNotes(m) {
+    const b = (budgetEntry(m || curYm()) || {}).notes || {}, o = {};
+    Object.keys(b).forEach(k => { const t = String(b[k] == null ? "" : b[k]).trim(); if (t) o[k] = t; });
+    return o;
+  }
   function budgetLimits(m) {
     const b = (budgetEntry(m || curYm()) || {}).limits || {}, o = {};
     Object.keys(b).forEach(k => { if (UI.num(b[k]) > 0) o[k] = UI.num(b[k]); });
@@ -379,7 +385,7 @@
   }
   function budget(m) {
     m = m || curYm();
-    const exists = budgetExists(m), cfg = budgetCfg(m), limits = budgetLimits(m), today = UI.date.local(), cur = curYm();
+    const exists = budgetExists(m), cfg = budgetCfg(m), limits = budgetLimits(m), notes = budgetNotes(m), today = UI.date.local(), cur = curYm();
     // откуда можно скопировать: ближайший ПРЕДЫДУЩИЙ месяц с бюджетом, иначе ближайший следующий
     const bms = budgetMonths().filter(k => k !== m), copyFrom = bms.filter(k => k < m).pop() || bms.filter(k => k > m)[0] || null;
     const dim = UI.date.daysIn(m);
@@ -413,7 +419,7 @@
       const proj = frac >= 0.15 && m === cur ? s / frac : null;
       let st = "g";
       if (s >= l) st = "r"; else if (p >= 0.8 || (proj != null && proj > l)) st = "o";
-      return { name: k, spent: s, limit: l, pct: Math.round(p * 100), proj, st, left: Math.max(0, l - s) };
+      return { name: k, spent: s, limit: l, note: notes[k] || "", pct: Math.round(p * 100), proj, st, left: Math.max(0, l - s) };
     }).sort((a, b) => b.pct - a.pct);
     const noLimit = Object.keys(spent).filter(k => limits[k] == null && !SYS_CATS.includes(k))
       .map(k => ({ name: k, spent: spent[k] })).sort((a, b) => b.spent - a.spent);
@@ -435,5 +441,5 @@
   }
 
   global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems, lombard,
-        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue, budget, budgetCfg, budgetLimits, budgetExists, budgetMonths };
+        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue, budget, budgetCfg, budgetLimits, budgetNotes, budgetExists, budgetMonths };
 })(window);
