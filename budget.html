@@ -175,6 +175,7 @@ function render() {
     const mark = isCur ? B.frac * 100 : null;
     h += `<div class="row tap" onclick="editLimit(${JSON.stringify(c.name).replace(/"/g, "&quot;")})" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:8px"><span>${c.st === "r" ? "🔴" : c.st === "o" ? "🟡" : "🟢"} ${esc(c.name)}</span><b>${fmt(c.spent)} / ${fmt(c.limit)}</b></div>
+      ${c.note ? `<div class="mut" style="margin:2px 0 4px">💬 ${esc(c.note)}</div>` : ""}
       ${bar(c.pct, c.st, mark)}
       <div class="mut">${c.pct}% · ${c.spent >= c.limit ? "перерасход " + fmt(c.spent - c.limit) : "осталось " + fmt(c.limit - c.spent)}${isCur && c.proj != null ? " · прогноз ≈ " + fmt(Math.round(c.proj)) : ""}</div>
     </div>`;
@@ -225,6 +226,7 @@ function deleteBudget() {
 function modal(title, fields, onSave, extra) {
   const box = $("modal");
   const inputs = fields.map(f => {
+    if (f.text) return `<div class="fld"><label for="f_${f.id}">${esc(f.label)}</label><textarea class="form-control" id="f_${f.id}" rows="2" maxlength="200" autocomplete="off" placeholder="${esc(f.ph || "")}" style="resize:none;font-family:inherit">${esc(f.value == null ? "" : f.value)}</textarea></div>`;
     if (f.options) return `<div class="fld"><label for="f_${f.id}">${esc(f.label)}</label><select class="form-control" id="f_${f.id}">${f.options.map(o => `<option${o === f.value ? " selected" : ""}>${esc(o)}</option>`).join("")}</select></div>`;
     return `<div class="fld"><label for="f_${f.id}">${esc(f.label)}</label><input class="form-control" id="f_${f.id}" inputmode="decimal" autocomplete="off" value="${esc(f.value == null ? "" : f.value)}" placeholder="${esc(f.ph || "")}"></div>`;
   }).join("");
@@ -242,7 +244,7 @@ function modal(title, fields, onSave, extra) {
     try { onSave(v); close(); render(); } catch (e) { $("mErr").textContent = e.message || String(e); }
   };
   if (extra) $("mExtra").onclick = () => { extra.fn(); close(); render(); };
-  const first = box.querySelector("input"); if (first) setTimeout(() => first.focus(), 50);
+  const first = box.querySelector("input, textarea"); if (first) setTimeout(() => first.focus(), 50);
 }
 
 function expenseCats() {
@@ -256,12 +258,13 @@ function editLimit(name) {
   if (name == null) {
     const free = expenseCats().filter(k => lim[k] == null);
     if (!free.length) return Notify.error("Лимиты уже стоят на всех категориях");
-    modal("Новый лимит на месяц", [{ id: "k", label: "Категория", options: free, value: free[0] }, { id: "l", label: "Лимит, лей", ph: "например 800" }],
-      v => FinanceAPI.limitSet(v.k, v.l, ym));
+    modal("Новый лимит на месяц", [{ id: "k", label: "Категория", options: free, value: free[0] }, { id: "l", label: "Лимит, лей", ph: "например 800" }, { id: "n", label: "Комментарий (необязательно)", text: true, ph: "например: долг за свет, рассрочка…" }],
+      v => FinanceAPI.limitSet(v.k, v.l, ym, v.n));
   } else {
     const sg = compute(ym).suggest[name];
-    modal("Лимит: " + name, [{ id: "l", label: "Лимит на месяц, лей", value: lim[name] != null ? lim[name] : "", ph: sg ? "≈ " + sg : "" }],
-      v => FinanceAPI.limitSet(name, v.l, ym),
+    modal("Лимит: " + name, [{ id: "l", label: "Лимит на месяц, лей", value: lim[name] != null ? lim[name] : "", ph: sg ? "≈ " + sg : "" },
+        { id: "n", label: "Комментарий", text: true, value: Calc.budgetNotes(ym)[name] || "", ph: "например: долг за свет, рассрочка…" }],
+      v => FinanceAPI.limitSet(name, v.l, ym, v.n),
       lim[name] != null ? { label: "🗑 Убрать лимит", fn: () => FinanceAPI.limitRemove(name, ym) } : null);
   }
 }
