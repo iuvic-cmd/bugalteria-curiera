@@ -4,7 +4,7 @@
  * Перед каждой миграцией делается резервная копия затрагиваемых ключей.
  */
 (function (global) {
-    const VERSION = 2;
+    const VERSION = 3;
     const maxId = ops => Math.max(0, ...ops.map(o => +o.id || 0));
 
     const MIGRATIONS = {
@@ -44,6 +44,26 @@
                 }
                 return f;
             }));
+        },
+
+        // v3: бюджет по месяцам. Раньше лимиты (byudzhety) и параметры (budget_cfg) были общими для всех месяцев,
+        // из-за чего бюджет декабря «просвечивал» в ноябре. Прежние данные переносим в ОДИН месяц — следующий
+        // после текущего (на момент миграции); старые ключи не удаляем (на них смотрит «Финансы»).
+        3() {
+            if (AppStorage.has("budgets_m")) return;
+            const L = AppStorage.get("byudzhety", {}) || {}, C = AppStorage.get("budget_cfg", null);
+            const limits = {};
+            Object.keys(L).forEach(k => { const v = Number(L[k]); if (v > 0) limits[k] = v; });
+            const blank = x => x === "" || x == null;
+            const hasCfg = !!C && typeof C === "object" && (!blank(C.salary) || Number(C.extra) > 0 || Number(C.save) > 0);
+            if (!Object.keys(limits).length && !hasCfg) return;   // переносить нечего: бюджетов не было
+            AppStorage.set("backup_budget_pre_v3", { byudzhety: L, budget_cfg: C });
+            const m = UI.date.shift(UI.date.month(), 1);
+            AppStorage.set("budgets_m", { [m]: { limits, cfg: {
+                salary: C && !blank(C.salary) ? Number(C.salary) : null,
+                extra: C ? Number(C.extra) || 0 : 0,
+                save: C ? Number(C.save) || 0 : 0
+            } } });
         }
     };
 
