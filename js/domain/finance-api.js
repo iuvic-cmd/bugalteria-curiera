@@ -558,12 +558,17 @@
             if (ch) AppStorage.set("budgets_m", B);
         },
         // Параметры бюджета месяца: ожидаемая зарплата (null = авто), прочие доходы, откладывание
-        budgetConfigSet({ salary, extra, save }, ym) {
+        // Не переданные поля берутся из текущих параметров месяца. salMode: "avg" | "actual"; extraMode: "auto" | "fact" | "manual" | "none"
+        budgetConfigSet(c, ym) {
+            const B = this._budgets(), e = this._bm(B, ym || UI.date.month()), old = e.cfg || {};
+            const pick = k => c[k] !== undefined ? c[k] : old[k];
+            const salary = pick("salary"), extra = pick("extra"), save = pick("save");
+            const salMode = pick("salMode") || "avg", extraMode = pick("extraMode") || "auto";
             const blank = x => x === "" || x == null;
             const n = x => blank(x) ? 0 : UI.num(x);
             if (n(extra) < 0 || n(save) < 0 || (!blank(salary) && UI.num(salary) < 0)) throw new Error("Суммы не могут быть отрицательными");
-            const B = this._budgets();
-            this._bm(B, ym || UI.date.month()).cfg = { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)) };
+            if (!["avg", "actual"].includes(salMode) || !["auto", "fact", "manual", "none"].includes(extraMode)) throw new Error("Неизвестный режим");
+            e.cfg = { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)), salMode, extraMode };
             AppStorage.set("budgets_m", B);
         },
 
