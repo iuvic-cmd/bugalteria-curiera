@@ -158,7 +158,9 @@ function render() {
 
   // 3b. Бюджет месяца: тот же расчёт, что на вкладке «Бюджет» (Calc.budget)
   const bg = Calc.budget(ym);
-  $("cBudget").innerHTML = `<h2>Бюджет <a href="budget.html">Бюджет →</a></h2>` + (bg.cats.length
+  $("cBudget").innerHTML = `<h2>Бюджет <a href="budget.html">Бюджет →</a></h2>` + (!bg.exists
+    ? `<div class="empty">Бюджет на ${esc(ruMonth(ym).toLowerCase())} не создан — <a href="budget.html" style="color:var(--accent)">создать</a></div>`
+    : bg.cats.length
     ? `<div class="row" style="border:0;padding-top:0"><span>Можно тратить в день<small>осталось в лимитах ${fmt(Math.round(bg.varLeft))} · дней: ${bg.daysLeft}</small></span><b class="big" style="font-size:20px">${fmt(Math.floor(bg.perDay))}</b></div>`
       + bg.cats.filter(c => c.st !== "g").slice(0, 3).map(c => row("budget.html", `${c.st === "r" ? "🔴" : "🟡"} ${esc(c.name)}`, `${fmt(c.spent)} из ${fmt(c.limit)}`, c.pct + "%")).join("")
     : `<div class="empty">Лимитов нет — <a href="budget.html" style="color:var(--accent)">поставить</a></div>`);
