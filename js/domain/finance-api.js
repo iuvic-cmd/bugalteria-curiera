@@ -485,6 +485,8 @@
                 Object.keys(BM).forEach(m => {
                     const l = BM[m] && BM[m].limits;
                     if (l && old in l) { l[nw] = nw in l ? UI.r2(l[nw] + l[old]) : l[old]; delete l[old]; bch = true; }
+                    const nt = BM[m] && BM[m].notes;
+                    if (nt && old in nt) { if (!nt[nw]) nt[nw] = nt[old]; delete nt[old]; bch = true; }
                 });
                 if (bch) AppStorage.set("budgets_m", BM);
                 const plans = AppStorage.get("plans", null);
@@ -531,30 +533,40 @@
         // Лимиты бюджета по категориям трат (ключ byudzhety — общий для «Финансов» и «Бюджета»)
         // Бюджеты хранятся по месяцам (ключ budgets_m): { "ГГГГ-ММ": { limits, cfg } }. Старый byudzhety — только для «Финансов».
         _budgets() { const b = AppStorage.get("budgets_m", {}); return b && typeof b === "object" && !Array.isArray(b) ? b : {}; },
-        _emptyBudget() { return { limits: {}, cfg: { salary: null, extra: 0, save: 0 } }; },
-        _bm(B, ym) { const e = B[ym] = B[ym] && typeof B[ym] === "object" ? B[ym] : this._emptyBudget(); e.limits = e.limits || {}; return e; },
+        _emptyBudget() { return { limits: {}, notes: {}, cfg: { salary: null, extra: 0, save: 0 } }; },
+        _bm(B, ym) { const e = B[ym] = B[ym] && typeof B[ym] === "object" ? B[ym] : this._emptyBudget(); e.limits = e.limits || {}; e.notes = e.notes || {}; return e; },
         // Создать бюджет месяца: пустой или копией другого месяца (лимиты + параметры)
         budgetCreate(ym, fromYm) {
             ym = ym || UI.date.month();
             const B = this._budgets();
             if (B[ym]) throw new Error("Бюджет на этот месяц уже создан");
             const src = fromYm && B[fromYm];
-            B[ym] = src ? JSON.parse(JSON.stringify({ limits: src.limits || {}, cfg: src.cfg || this._emptyBudget().cfg })) : this._emptyBudget();
+            B[ym] = src ? JSON.parse(JSON.stringify({ limits: src.limits || {}, notes: src.notes || {}, cfg: src.cfg || this._emptyBudget().cfg })) : this._emptyBudget();
             AppStorage.set("budgets_m", B);
         },
         budgetDelete(ym) {
             const B = this._budgets();
             if (ym in B) { delete B[ym]; AppStorage.set("budgets_m", B); }
         },
-        limitSet(cat, amount, ym) {
+        // note: undefined — комментарий не трогаем; пустая строка — убираем; иначе сохраняем (до 200 символов)
+        limitSet(cat, amount, ym, note) {
             cat = this._name(cat, "категория"); amount = this._pos(amount);
-            const B = this._budgets(); this._bm(B, ym || UI.date.month()).limits[cat] = amount;
+            const B = this._budgets(), e = this._bm(B, ym || UI.date.month());
+            e.limits[cat] = amount;
+            if (note !== undefined) {
+                const t = String(note == null ? "" : note).trim().slice(0, 200);
+                if (t) e.notes[cat] = t; else delete e.notes[cat];
+            }
             AppStorage.set("budgets_m", B);
         },
         // ym не указан — убрать лимит этой категории во всех месяцах (например, при удалении категории)
         limitRemove(cat, ym) {
             const B = this._budgets(); let ch = false;
-            (ym ? [ym] : Object.keys(B)).forEach(m => { const l = B[m] && B[m].limits; if (l && cat in l) { delete l[cat]; ch = true; } });
+            (ym ? [ym] : Object.keys(B)).forEach(m => {
+                const l = B[m] && B[m].limits, nt = B[m] && B[m].notes;
+                if (l && cat in l) { delete l[cat]; ch = true; }
+                if (nt && cat in nt) { delete nt[cat]; ch = true; }
+            });
             if (ch) AppStorage.set("budgets_m", B);
         },
         // Параметры бюджета месяца: ожидаемая зарплата (null = авто), прочие доходы, откладывание
