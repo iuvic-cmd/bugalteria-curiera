@@ -336,12 +336,18 @@
     // ===== Бюджет месяца (единый расчёт для «Бюджета» и «Сегодня») =====
   // Служебные «категории» процентов входят в платежи по кредитам/картам/ломбарду — лимитов на них не ставим
   const SYS_CATS = ["💳 Проценты по кредиткам", "🏛 Проценты по кредитам", "🥇 Проценты по ломбарду"];
-  function budgetCfg() {
-    const c = AppStorage.get("budget_cfg", {}) || {};
+  // Бюджеты хранятся ПО МЕСЯЦАМ: budgets_m = { "ГГГГ-ММ": { limits: {категория: сумма}, cfg: {salary, extra, save} } }.
+  // Нет записи за месяц = «бюджет не создан»: лимиты и параметры других месяцев не подтягиваются.
+  const budgetsAll = () => { const b = AppStorage.get("budgets_m", {}); return b && typeof b === "object" && !Array.isArray(b) ? b : {}; };
+  const budgetEntry = m => { const e = budgetsAll()[m]; return e && typeof e === "object" ? e : null; };
+  const budgetExists = m => !!budgetEntry(m || curYm());
+  const budgetMonths = () => Object.keys(budgetsAll()).filter(k => budgetEntry(k)).sort();
+  function budgetCfg(m) {
+    const c = (budgetEntry(m || curYm()) || {}).cfg || {};
     return { salary: c.salary == null || c.salary === "" ? null : UI.num(c.salary), extra: UI.num(c.extra), save: UI.num(c.save) };
   }
-  function budgetLimits() {
-    const b = AppStorage.get("byudzhety", {}) || {}, o = {};
+  function budgetLimits(m) {
+    const b = (budgetEntry(m || curYm()) || {}).limits || {}, o = {};
     Object.keys(b).forEach(k => { if (UI.num(b[k]) > 0) o[k] = UI.num(b[k]); });
     return o;
   }
@@ -366,7 +372,9 @@
   }
   function budget(m) {
     m = m || curYm();
-    const cfg = budgetCfg(), limits = budgetLimits(), today = UI.date.local(), cur = curYm();
+    const exists = budgetExists(m), cfg = budgetCfg(m), limits = budgetLimits(m), today = UI.date.local(), cur = curYm();
+    // откуда можно скопировать: ближайший ПРЕДЫДУЩИЙ месяц с бюджетом, иначе ближайший следующий
+    const bms = budgetMonths().filter(k => k !== m), copyFrom = bms.filter(k => k < m).pop() || bms.filter(k => k > m)[0] || null;
     const dim = UI.date.daysIn(m);
     const dom = m < cur ? dim : m > cur ? 0 : +today.slice(8, 10);
     const daysLeft = m < cur ? 0 : m > cur ? dim : dim - dom + 1;
@@ -413,10 +421,10 @@
         if (v >= 10) suggest[k] = v;
       });
     }
-    return { m, cfg, limits, dim, dom, daysLeft, frac, sal, otherIncome, income, fixed, regs, fixedPlan, limitsSum, save: cfg.save, free,
+    return { m, exists, copyFrom, cfg, limits, dim, dom, daysLeft, frac, sal, otherIncome, income, fixed, regs, fixedPlan, limitsSum, save: cfg.save, free,
       cats, noLimit, totalSpent, varLeft, perDay: daysLeft > 0 ? varLeft / daysLeft : 0, suggest, histN: hist.length };
   }
 
   global.Calc = { normOp, ops, isExpense, isIncome, salary, setSalaryClosed, salaryReceipts, month, kmDeltas, scooter, scItems, lombard,
-        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue, budget, budgetCfg, budgetLimits };
+        planOps, autoFact, planSummary, finWanted, scWanted, paymentsDue, budget, budgetCfg, budgetLimits, budgetExists, budgetMonths };
 })(window);
