@@ -19,6 +19,7 @@ h2{font-size:15px;margin:4px 0 10px;color:var(--text-dim);font-weight:600}
 .big{font-size:34px;font-weight:800;margin:2px 0}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-top:1px solid var(--border)}
 .row.tap{cursor:pointer}
+.seg{display:flex;gap:6px;margin:4px 0 10px}.seg button{flex:1;padding:9px 6px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text);font-weight:600;font-size:14px}.seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .card>.row:first-of-type,.card>h2+.row{border-top:0}
 .row b{white-space:nowrap}
 .bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:6px 0 2px;position:relative}
@@ -149,7 +150,8 @@ function render() {
     <div class="stack">${parts.map(p => `<i style="width:${p.v / tot * 100}%;background:${p.c}"></i>`).join("")}</div>
     <div class="legend">${parts.map(p => `<span style="--c:${p.c}">${p.n}: ${fmt(p.v)}</span>`).join("")}</div>
     <div class="row" style="margin-top:8px"><div>💵 Зарплата<div class="mut">${esc(B.sal.src)}</div></div><b>${fmt(B.sal.v)}</b></div>
-    <div class="row"><div>➕ Прочие доходы</div><b>${fmt(B.otherIncome)}</b></div>
+    ${ym < curYm() ? "" : `<div class="seg"><button class="${B.cfg.salMode === "avg" ? "on" : ""}" onclick="setSalMode('avg')">Среднее</button><button class="${B.cfg.salMode === "actual" ? "on" : ""}" onclick="setSalMode('actual')">Фактическая</button></div>`}
+    <div class="row tap" onclick="openExtra()"><div>➕ Прочие доходы<div class="mut">${esc(B.otherSrc)}${B.factIncome > 0 ? " · факт: " + fmt(B.factIncome) : ""}</div></div><b>${fmt(B.otherIncome)}</b></div>
     <button class="btn btn-line" style="margin-top:10px;margin-bottom:0" onclick="openCfg()">⚙ Параметры (зарплата, откладывание)</button>
   </div>`;
 
@@ -273,13 +275,30 @@ function applySuggest() {
   Notify.show("Лимитов добавлено: " + keys.length); render();
 }
 
+const SAL_MODES = { avg: "Среднее (или заданная вручную)", actual: "Фактическая (начислено по дням)" };
+const EXTRA_MODES = { auto: "Больше из заданного и фактического", fact: "Только фактические доходы", manual: "Только заданная сумма", none: "Не учитывать" };
+const modeKey = (map, label) => Object.keys(map).find(k => map[k] === label);
+
+function setSalMode(mode) {
+  try { FinanceAPI.budgetConfigSet({ salMode: mode }, ym); } catch (e) { Notify.error(e.message || String(e)); }
+  render();
+}
+function openExtra() {
+  const c = Calc.budgetCfg(ym);
+  modal("Прочие доходы: " + ymTitle(ym), [
+    { id: "extraMode", label: "Что учитывать", options: Object.values(EXTRA_MODES), value: EXTRA_MODES[c.extraMode] },
+    { id: "extra", label: "Заданная сумма в месяц (подработки, чаевые…)", value: c.extra || "" }
+  ], v => FinanceAPI.budgetConfigSet({ extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra }, ym));
+}
 function openCfg() {
   const c = Calc.budgetCfg(ym);
   modal("Параметры бюджета: " + ymTitle(ym), [
-    { id: "salary", label: "Ожидаемая зарплата в месяц (пусто = авто по прошлым месяцам)", value: c.salary == null ? "" : c.salary },
-    { id: "extra", label: "Прочие доходы в месяц (подработки, чаевые…)", value: c.extra || "" },
+    { id: "salMode", label: "Зарплата в бюджете", options: Object.values(SAL_MODES), value: SAL_MODES[c.salMode] },
+    { id: "salary", label: "Ожидаемая зарплата (пусто = среднее за прошлые месяцы; работает в режиме «Среднее»)", value: c.salary == null ? "" : c.salary },
+    { id: "extraMode", label: "Прочие доходы: что учитывать", options: Object.values(EXTRA_MODES), value: EXTRA_MODES[c.extraMode] },
+    { id: "extra", label: "Заданная сумма прочих доходов в месяц", value: c.extra || "" },
     { id: "save", label: "Откладывать в месяц", value: c.save || "" }
-  ], v => FinanceAPI.budgetConfigSet(v, ym));
+  ], v => FinanceAPI.budgetConfigSet({ salMode: modeKey(SAL_MODES, v.salMode), salary: v.salary, extraMode: modeKey(EXTRA_MODES, v.extraMode), extra: v.extra, save: v.save }, ym));
 }
 
 $("prev").onclick = () => { ym = shiftYm(ym, -1); render(); };
