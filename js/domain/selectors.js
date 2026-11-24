@@ -347,6 +347,7 @@
     return {
       salary: c.salary == null || c.salary === "" ? null : UI.num(c.salary), extra: UI.num(c.extra), save: UI.num(c.save),
       // salMode: "avg" — среднее/заданное (по умолчанию), "actual" — фактически начислено по дням
+      extraNote: String(c.extraNote == null ? "" : c.extraNote).trim(),   // комментарий к прочим доходам
       salMode: c.salMode === "actual" ? "actual" : "avg",
       // extraMode: "auto" — больше из заданного и фактического (по умолчанию), "fact", "manual", "none"
       extraMode: ["fact", "manual", "none"].includes(c.extraMode) ? c.extraMode : "auto"
