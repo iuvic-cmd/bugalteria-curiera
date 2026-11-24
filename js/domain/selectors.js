@@ -344,7 +344,13 @@
   const budgetMonths = () => Object.keys(budgetsAll()).filter(k => budgetEntry(k)).sort();
   function budgetCfg(m) {
     const c = (budgetEntry(m || curYm()) || {}).cfg || {};
-    return { salary: c.salary == null || c.salary === "" ? null : UI.num(c.salary), extra: UI.num(c.extra), save: UI.num(c.save) };
+    return {
+      salary: c.salary == null || c.salary === "" ? null : UI.num(c.salary), extra: UI.num(c.extra), save: UI.num(c.save),
+      // salMode: "avg" — среднее/заданное (по умолчанию), "actual" — фактически начислено по дням
+      salMode: c.salMode === "actual" ? "actual" : "avg",
+      // extraMode: "auto" — больше из заданного и фактического (по умолчанию), "fact", "manual", "none"
+      extraMode: ["fact", "manual", "none"].includes(c.extraMode) ? c.extraMode : "auto"
+    };
   }
   function budgetLimits(m) {
     const b = (budgetEntry(m || curYm()) || {}).limits || {}, o = {};
@@ -364,6 +370,7 @@
   function expectedSalary(m, cfg) {
     const accrued = salary(m).accrued, cur = curYm();
     if (m < cur) return { v: accrued, src: "начислено по дням" };
+    if (cfg.salMode === "actual") return { v: accrued, src: accrued > 0 ? "фактически начислено по дням" : "фактически: пока ничего не начислено" };
     if (cfg.salary != null) return { v: Math.max(cfg.salary, m === cur ? accrued : 0), src: "задано вручную" };
     const prev = [1, 2, 3, 4, 5, 6].map(i => salary(UI.date.shift(cur, -i)).accrued).filter(v => v > 0).slice(0, 3);
     const avg = prev.length ? prev.reduce((a, b) => a + b, 0) / prev.length : 0;
@@ -382,7 +389,9 @@
 
     const byM = expenseByMonth(), spent = byM[m] || {};
     const sal = expectedSalary(m, cfg);
-    const otherIncome = Math.max(cfg.extra, month(m).income);
+    const factIncome = month(m).income;
+    const otherIncome = cfg.extraMode === "fact" ? factIncome : cfg.extraMode === "manual" ? cfg.extra : cfg.extraMode === "none" ? 0 : Math.max(cfg.extra, factIncome);
+    const otherSrc = { auto: "больше из заданного и фактического", fact: "только фактические за месяц", manual: "только заданная сумма", none: "не учитываются" }[cfg.extraMode];
     const income = sal.v + otherIncome;
 
     // обязательные платежи (кредиты / карты / ломбард): план и факт как в «Плане»
@@ -421,7 +430,7 @@
         if (v >= 10) suggest[k] = v;
       });
     }
-    return { m, exists, copyFrom, cfg, limits, dim, dom, daysLeft, frac, sal, otherIncome, income, fixed, regs, fixedPlan, limitsSum, save: cfg.save, free,
+    return { m, exists, copyFrom, cfg, limits, dim, dom, daysLeft, frac, sal, otherIncome, otherSrc, factIncome, income, fixed, regs, fixedPlan, limitsSum, save: cfg.save, free,
       cats, noLimit, totalSpent, varLeft, perDay: daysLeft > 0 ? varLeft / daysLeft : 0, suggest, histN: hist.length };
   }
 
