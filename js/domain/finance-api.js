@@ -481,6 +481,12 @@
             if (kind === "expense") {
                 const L = AppStorage.get("byudzhety", {}) || {};
                 if (old in L) { L[nw] = nw in L ? UI.r2(L[nw] + L[old]) : L[old]; delete L[old]; AppStorage.set("byudzhety", L); }
+                const BM = this._budgets(); let bch = false;
+                Object.keys(BM).forEach(m => {
+                    const l = BM[m] && BM[m].limits;
+                    if (l && old in l) { l[nw] = nw in l ? UI.r2(l[nw] + l[old]) : l[old]; delete l[old]; bch = true; }
+                });
+                if (bch) AppStorage.set("budgets_m", BM);
                 const plans = AppStorage.get("plans", null);
                 if (plans && typeof plans === "object") {
                     let ch = false; const from = "cat:" + old.toLowerCase();
@@ -523,20 +529,42 @@
         },
 
         // Лимиты бюджета по категориям трат (ключ byudzhety — общий для «Финансов» и «Бюджета»)
-        limitSet(cat, amount) {
-            cat = this._name(cat, "категория"); amount = this._pos(amount);
-            const L = AppStorage.get("byudzhety", {}) || {}; L[cat] = amount; AppStorage.set("byudzhety", L);
+        // Бюджеты хранятся по месяцам (ключ budgets_m): { "ГГГГ-ММ": { limits, cfg } }. Старый byudzhety — только для «Финансов».
+        _budgets() { const b = AppStorage.get("budgets_m", {}); return b && typeof b === "object" && !Array.isArray(b) ? b : {}; },
+        _emptyBudget() { return { limits: {}, cfg: { salary: null, extra: 0, save: 0 } }; },
+        _bm(B, ym) { const e = B[ym] = B[ym] && typeof B[ym] === "object" ? B[ym] : this._emptyBudget(); e.limits = e.limits || {}; return e; },
+        // Создать бюджет месяца: пустой или копией другого месяца (лимиты + параметры)
+        budgetCreate(ym, fromYm) {
+            ym = ym || UI.date.month();
+            const B = this._budgets();
+            if (B[ym]) throw new Error("Бюджет на этот месяц уже создан");
+            const src = fromYm && B[fromYm];
+            B[ym] = src ? JSON.parse(JSON.stringify({ limits: src.limits || {}, cfg: src.cfg || this._emptyBudget().cfg })) : this._emptyBudget();
+            AppStorage.set("budgets_m", B);
         },
-        limitRemove(cat) {
-            const L = AppStorage.get("byudzhety", {}) || {};
-            if (cat in L) { delete L[cat]; AppStorage.set("byudzhety", L); }
+        budgetDelete(ym) {
+            const B = this._budgets();
+            if (ym in B) { delete B[ym]; AppStorage.set("budgets_m", B); }
+        },
+        limitSet(cat, amount, ym) {
+            cat = this._name(cat, "категория"); amount = this._pos(amount);
+            const B = this._budgets(); this._bm(B, ym || UI.date.month()).limits[cat] = amount;
+            AppStorage.set("budgets_m", B);
+        },
+        // ym не указан — убрать лимит этой категории во всех месяцах (например, при удалении категории)
+        limitRemove(cat, ym) {
+            const B = this._budgets(); let ch = false;
+            (ym ? [ym] : Object.keys(B)).forEach(m => { const l = B[m] && B[m].limits; if (l && cat in l) { delete l[cat]; ch = true; } });
+            if (ch) AppStorage.set("budgets_m", B);
         },
         // Параметры бюджета месяца: ожидаемая зарплата (null = авто), прочие доходы, откладывание
-        budgetConfigSet({ salary, extra, save }) {
+        budgetConfigSet({ salary, extra, save }, ym) {
             const blank = x => x === "" || x == null;
             const n = x => blank(x) ? 0 : UI.num(x);
             if (n(extra) < 0 || n(save) < 0 || (!blank(salary) && UI.num(salary) < 0)) throw new Error("Суммы не могут быть отрицательными");
-            AppStorage.set("budget_cfg", { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)) });
+            const B = this._budgets();
+            this._bm(B, ym || UI.date.month()).cfg = { salary: blank(salary) ? null : UI.r2(UI.num(salary)), extra: UI.r2(n(extra)), save: UI.r2(n(save)) };
+            AppStorage.set("budgets_m", B);
         },
 
         // Правка траты/дохода: баланс, итоги по категориям и базовая сумма (baz) пересчитываются вместе
