@@ -134,7 +134,7 @@
   // ---- Факт из «Финансов» (поддерживает оба формата журнала) ----
   function planOps() {
     return State.getOps().map(o => {
-      const date = normDate(o.data || o.date);
+      const date = /^\d{4}-\d{2}$/.test(o.pm || "") ? o.pm + "-01" : normDate(o.data || o.date); // pm = «в план этого месяца»
       if (o.tip) {
         const base = Math.abs(+(o.baz != null ? o.baz : o.summa) || 0), s = Math.abs(+o.summa || 0);
         if (o.tip === "Трата") return { date, type: "exp", cat: o.kat || "", note: o.zametka || "", s: base };
@@ -146,6 +146,7 @@
         if (o.tip === "Кредит" && o.napr === "платёж") return { date, type: "credit", name: o.kat || "", s };
         if (o.tip === "Ломбард" && o.napr === "платёж") return { date, type: "lombard", s };
         if (o.tip === "Долг" && o.napr === "вернул я") return { date, type: "debt", cat: o.kat || "", s };
+        if (o.tip === "Доход") return { date, type: "inc", cat: o.kat || "", note: o.zametka || "", s: base };
         return null;
       }
       return null;
@@ -162,13 +163,20 @@
       const name = src.slice(4).toLowerCase();
       return inM.filter(o => o.type === "exp" && String(o.note || "").toLowerCase() === name).reduce((a, o) => a + o.s, 0);
     }
+    // «cat:электричество|ноябрь» — категория + слово, которое должно быть в заметке операции
+    const nameKw = x => { const i = x.indexOf("|"); return i < 0 ? [x.toLowerCase().trim(), ""] : [x.slice(0, i).toLowerCase().trim(), x.slice(i + 1).toLowerCase().trim()]; };
+    const hasKw = (o, kw) => !kw || String(o.note || "").toLowerCase().includes(kw);
     if (src.startsWith("debt:")) {
       const who = src.slice(5).toLowerCase();
       return inM.filter(o => o.type === "debt" && o.cat.toLowerCase().includes(who)).reduce((a, o) => a + o.s, 0);
     }
     if (src.startsWith("cat:")) {
-      const name = src.slice(4).toLowerCase();
-      return inM.filter(o => o.type === "exp" && o.cat.toLowerCase().includes(name)).reduce((a, o) => a + o.s, 0);
+      const [name, kw] = nameKw(src.slice(4));
+      return inM.filter(o => o.type === "exp" && o.cat.toLowerCase().includes(name) && hasKw(o, kw)).reduce((a, o) => a + o.s, 0);
+    }
+    if (src.startsWith("inc:")) {
+      const [name, kw] = nameKw(src.slice(4));
+      return inM.filter(o => o.type === "inc" && o.cat.toLowerCase().includes(name) && hasKw(o, kw)).reduce((a, o) => a + o.s, 0);
     }
     return 0;
   }
