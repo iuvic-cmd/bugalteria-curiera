@@ -35,6 +35,7 @@
         if (!list.includes(cat)) { list.push(cat); State.setCategories(c); }
     };
 
+    const pmOk = v => /^\d{4}-\d{2}$/.test(v || "") ? v : undefined; // «в план месяца»
     const FinanceAPI = {
         _addOp(op) {
             const ops = State.getOps();
@@ -50,7 +51,7 @@
         },
 
         // Трата (уменьшает баланс кошелька)
-        spend({ date, wallet, amount, category, note, ref, addCategory }) {
+        spend({ date, wallet, amount, category, note, ref, addCategory, pm }) {
             amount = UI.r2(UI.num(amount));
             if (amount <= 0) throw new Error("Сумма должна быть больше нуля");
 
@@ -63,11 +64,11 @@
             bump("traty", category, amount);
             if (addCategory) ensureCat("expense", category);
 
-            return this._addOp({ data: stamp(date), tip: "Трата", summa: amount, koshel: wallet, kat: category, zametka: note, baz: toBase(wallet, amount), ref });
+            return this._addOp({ data: stamp(date), tip: "Трата", summa: amount, koshel: wallet, kat: category, zametka: note, baz: toBase(wallet, amount), ref, pm: pmOk(pm) });
         },
 
         // Доход (увеличивает баланс кошелька)
-        receive({ date, wallet, amount, category, note, ref, addCategory }) {
+        receive({ date, wallet, amount, category, note, ref, addCategory, pm }) {
             amount = UI.r2(UI.num(amount));
             if (amount <= 0) throw new Error("Сумма должна быть больше нуля");
 
@@ -79,7 +80,7 @@
             bump("dohody", category, amount);
             if (addCategory) ensureCat("income", category);
 
-            return this._addOp({ data: stamp(date), tip: "Доход", summa: amount, koshel: wallet, kat: category, zametka: note, baz: toBase(wallet, amount), ref });
+            return this._addOp({ data: stamp(date), tip: "Доход", summa: amount, koshel: wallet, kat: category, zametka: note, baz: toBase(wallet, amount), ref, pm: pmOk(pm) });
         },
 
         // Перевод между кошельками одной валюты (конвертация — только в «Финансах»)
@@ -142,7 +143,7 @@
         },
 
         // --- Кредитные карты ---
-        payCard({ date, wallet, cardId, amount, note }) {
+        payCard({ date, wallet, cardId, amount, note, pm }) {
             const s = this._pos(amount), { cards, c } = this._card(cardId), ws = this._wallets(wallet);
             if (walletCur(wallet) !== "MDL") throw new Error("Платёж по карте — только с кошелька в леях");
             if (ws[wallet] < s) throw new Error(`Недостаточно средств на «${wallet}»`);
@@ -151,14 +152,14 @@
             ws[wallet] = UI.r2(ws[wallet] - s); c.dolg = UI.r2(c.dolg - s);
             if (!c.min || s >= c.min || c.dolg <= 0) c.posl = this._ym();
             State.setWallets(ws); AppStorage.set("kartki", cards);
-            return this._rec("Кредитка", s, wallet, { date, kat: c.nazvanie, napr: "платёж", cid: c.id, pp, zametka: note });
+            return this._rec("Кредитка", s, wallet, { date, kat: c.nazvanie, napr: "платёж", cid: c.id, pp, zametka: note, pm: pmOk(pm) });
         },
-        cardBuy({ date, cardId, category, amount, note }) {
+        cardBuy({ date, cardId, category, amount, note, pm }) {
             const s = this._pos(amount), { cards, c } = this._card(cardId), av = UI.r2(c.limit - c.dolg);
             if (s > av) throw new Error("Превышен лимит. Доступно: " + UI.fmt(Math.max(0, av)));
             c.dolg = UI.r2(c.dolg + s); bump("traty", category, s);
             AppStorage.set("kartki", cards);
-            return this._rec("Кредитка", s, c.nazvanie, { date, kat: category, napr: "покупка", cid: c.id, zametka: note });
+            return this._rec("Кредитка", s, c.nazvanie, { date, kat: category, napr: "покупка", cid: c.id, zametka: note, pm: pmOk(pm) });
         },
         cardFee({ date, cardId, amount, note }) {
             const s = this._pos(amount), { cards, c } = this._card(cardId);
@@ -586,6 +587,15 @@
         },
 
         // Правка траты/дохода: баланс, итоги по категориям и базовая сумма (baz) пересчитываются вместе
+        // Привязка операции к плану другого месяца (деньги и остатки не трогает). pm "" = по дате операции.
+        opPlanMonth(id, pm) {
+            const ops = State.getOps(), z = ops.find(x => x && String(x.id) === String(id));
+            if (!z) throw new Error("Операция не найдена");
+            const v = pmOk(pm);
+            if (v) z.pm = v; else delete z.pm;
+            State.setOps(ops);
+            return true;
+        },
         opEdit({ id, category, amount, date, wallet, note }) {
             const ops = State.getOps(), z = ops.find(x => x && String(x.id) === String(id));
             if (!z) throw new Error("Операция не найдена");
