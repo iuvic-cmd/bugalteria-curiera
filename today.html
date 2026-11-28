@@ -23,6 +23,16 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
 .bad{color:var(--red)}.ok{color:var(--green)}
 .bar{height:8px;background:var(--border);border-radius:4px;overflow:hidden;margin:8px 0}.bar i{display:block;height:100%;background:var(--green)}
 .empty{color:var(--text-dim);font-size:13px;padding:2px 0}
+/* ＋ быстрая операция (как в «Финансах») */
+.fab{position:fixed;right:16px;bottom:calc(80px + env(safe-area-inset-bottom,0px));width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:30px;box-shadow:0 4px 14px #0005;z-index:9}
+#ov{display:none;position:fixed;inset:0;background:#0007;align-items:flex-end;z-index:50}#ov.on{display:flex}
+#sh{background:var(--panel);width:100%;max-width:480px;margin:0 auto;border-radius:18px 18px 0 0;padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));max-height:90%;overflow:auto;color:var(--text)}
+#sh input,#sh select,#sh .bt{width:100%;font:inherit;font-size:15px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:11px;margin:4px 0}
+#sh .bt{background:var(--panel);text-align:center;cursor:pointer;font-weight:600}#sh .bt.pri{background:var(--accent);color:#fff;border-color:var(--accent)}
+#sh label{font-size:13px;color:var(--text-dim);display:block;margin-top:6px}
+#sh .mut{color:var(--text-dim);font-size:13px}
+.seg{display:flex;gap:6px;margin-bottom:8px}.seg button{flex:1;padding:9px;border:1px solid var(--border);border-radius:10px;background:var(--bg);color:var(--text);font:inherit;cursor:pointer}.seg button.on{background:var(--accent);color:#fff}
+.qerr{color:var(--red);font-size:14px;min-height:20px}
 </style>
 </head>
 <body>
@@ -38,6 +48,9 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
   <div class="card" id="cBackup" style="display:none"></div>
   <div class="card" id="cPlan"></div>
 </div>
+
+<button class="fab" onclick="qSheet('Трата')">＋</button>
+<div id="ov"><div id="sh"></div></div>
 
 <nav class="tabbar"><div class="in">
   <a href="today.html" class="active"><span>🏠</span>Сегодня</a>
@@ -62,6 +75,7 @@ h1{font-size:24px;margin-bottom:2px}.sub{color:var(--text-dim);font-size:13px;ma
 <script>Schema.run();</script>
 <script src="js/domain/selectors.js"></script>
 <script src="js/domain/tariff.js"></script>
+<script src="js/domain/finance-api.js"></script>
 <script>
 Theme.init();
 const $ = id => document.getElementById(id), esc = UI.esc, fmt = UI.fmt;
@@ -133,7 +147,7 @@ function render() {
   const net = UI.r2(inc - exp);
   const opRows = dayOps.map(({ o, n }) => {
     const tm = String(o.data || "").slice(11, 16);
-    const sub = [tm && tm !== "00:00" ? tm : "", o.koshel || "", o.zametka || ""].filter(Boolean).map(esc).join(" · ");
+    const sub = [tm && tm !== "00:00" ? tm : "", o.koshel || "", o.zametka || "", o.pm ? "📋 " + o.pm : ""].filter(Boolean).map(esc).join(" · ");
     const isInc = n.kind === "income";
     return row("fin.html", (isInc ? "🟢 " : "🔴 ") + esc(n.cat || (isInc ? "Доход" : "Расход")), sub,
       `<span class="${isInc ? "ok" : "bad"}">${isInc ? "+" : "−"}${fmt(n.amount)}</span>`);
@@ -193,6 +207,63 @@ function render() {
     <div class="bar"><i style="width:${pct}%"></i></div>
     <div class="sub" style="margin:0 0 6px">Факт ${fmt(P.fact)} из ${fmt(P.plan)} лей (${diffTxt}) · не закрыто: ${P.open.length} из ${P.count}</div>` +
     open.map(t => row("plan.html", esc(t.title), "", t.left > 0 ? fmt(t.left) + " лей" : "—")).join("");
+}
+
+/* ===== ＋ Быстрая операция: та же форма и тот же FinanceAPI, что в «Финансах» ===== */
+const Q_SY = { MDL: "лей", USD: "$", EUR: "€" };
+const qWallets = () => Object.keys(State.getWallets() || {});
+const qCur = w => (AppStorage.get("valyuty", {}) || {})[w] || "MDL";
+const qKurs = c => c === "MDL" ? 1 : (+(AppStorage.get("kursy", {}) || {})[c] || 0);
+const qOpt = (a, s) => a.map(x => `<option${x === s ? " selected" : ""}>${esc(x)}</option>`).join("");
+const qPmOpts = () => { const d = new Date(), r = [["", "Авто (по дате операции)"]];
+  for (let k = -1; k <= 2; k++) { const x = new Date(d.getFullYear(), d.getMonth() + k, 1), ym = x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0"); r.push([ym, ym + " · " + MONTHS[x.getMonth()]]); }
+  return r; };
+// Дата из формы -> «ГГГГ-ММ-ДД ЧЧ:ММ»; для сегодняшней даты null (берётся текущее время)
+const qStamp = d => { if (!d || d === UI.date.local()) return null; const n = new Date(), p = v => String(v).padStart(2, "0"); return d + " " + p(n.getHours()) + ":" + p(n.getMinutes()); };
+let qTip = "Трата";
+function qClose() { $("ov").classList.remove("on"); }
+$("ov").addEventListener("click", e => { if (e.target.id === "ov") qClose(); });
+function qSheet(tip) {
+  qTip = tip;
+  const ws = qWallets(), cards = AppStorage.get("kartki", []) || [], cats = State.getCategories() || {};
+  const oldS = $("q_s") ? $("q_s").value : "", oldD = $("q_d") ? $("q_d").value : UI.date.local();
+  let h = `<div class="seg">${["Трата", "Доход", "Перевод"].map(x => `<button class="${x === tip ? "on" : ""}" onclick="qSheet('${x}')">${x}</button>`).join("")}</div>
+    <input id="q_s" inputmode="decimal" placeholder="Сумма" value="${esc(oldS)}"><label>Дата операции</label><input id="q_d" type="date" value="${esc(oldD)}">`;
+  if (tip === "Перевод") h += `<label>Откуда</label><select id="q_a" onchange="qCv()">${qOpt(ws)}</select><label>Куда</label><select id="q_b" onchange="qCv()">${qOpt(ws.concat(cards.map(c => "💳 " + c.nazvanie)), ws[1])}</select><input id="q_c" inputmode="decimal" placeholder="Сумма к зачислению" style="display:none">`;
+  else h += `<label>Кошелёк</label><select id="q_w">${qOpt(ws)}</select><label>Категория</label><select id="q_k">${qOpt((tip === "Трата" ? cats.expense : cats.income) || [])}</select>
+    <label>📋 В план месяца</label><select id="q_pm">${qPmOpts().map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join("")}</select>
+    <div class="mut">Нет нужной категории? Добавь в «Финансы» → «Разделы» → «Категории».</div>`;
+  h += `<input id="q_n" placeholder="Заметка (необязательно)"><div class="qerr" id="q_e"></div><button class="bt pri" onclick="qSubmit()">Сохранить</button><button class="bt" onclick="qClose()">Отмена</button>`;
+  $("sh").innerHTML = h; $("ov").classList.add("on");
+  if (tip === "Перевод") qCv();
+}
+function qCv() {
+  const a = $("q_a").value, b = $("q_b").value, c = $("q_c");
+  if (b.startsWith("💳 ") || qCur(a) === qCur(b)) { c.style.display = "none"; return; }
+  c.style.display = "block";
+  const s = UI.num($("q_s").value), ka = qKurs(qCur(a)), kb = qKurs(qCur(b));
+  if (s > 0 && ka && kb && !c.value) c.value = UI.r2(s * ka / kb);
+}
+function qSubmit() {
+  if (!guardAction("todayOp", 400)) return;
+  try {
+    const s = UI.num($("q_s").value), n = $("q_n").value.trim(), dt = qStamp($("q_d").value);
+    if (qTip === "Перевод") {
+      const a = $("q_a").value, b = $("q_b").value;
+      if (b.startsWith("💳 ")) {
+        const c = (AppStorage.get("kartki", []) || []).find(x => "💳 " + x.nazvanie === b);
+        if (!c) throw new Error("Карта не найдена");
+        FinanceAPI.payCard({ date: dt, wallet: a, cardId: c.id, amount: s, note: n });
+      } else if (qCur(a) === qCur(b)) FinanceAPI.transfer({ date: dt, fromWallet: a, toWallet: b, amount: s, note: n });
+      else FinanceAPI.convert({ date: dt, fromWallet: a, toWallet: b, amount: s, received: UI.num($("q_c").value), note: n });
+    } else {
+      const k = ($("q_k").value || "").trim();
+      if (!k) throw new Error("Выбери категорию");
+      const p = { date: dt, wallet: $("q_w").value, amount: s, category: k, note: n, addCategory: true, pm: $("q_pm").value };
+      if (qTip === "Трата") FinanceAPI.spend(p); else FinanceAPI.receive(p);
+    }
+    qClose(); render(); Notify.show("✅ Сохранено");
+  } catch (e) { $("q_e").textContent = typeof e === "string" ? e : e.message; }
 }
 
 render();
