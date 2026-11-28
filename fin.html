@@ -127,9 +127,9 @@ function syncMoney(){
   S.kat_trat=clone(c.expense||S.kat_trat);
   S.kat_dohodov=clone(c.income||S.kat_dohodov);
 }
-function addOp(tip,w,kat,s,note,dt){
+function addOp(tip,w,kat,s,note,dt,pm){
   kat=(kat||"").trim();if(!kat)throw"Выбери категорию";
-  const p={date:dt,wallet:w,amount:s,category:kat,note,addCategory:true};
+  const p={date:dt,wallet:w,amount:s,category:kat,note,addCategory:true,pm};
   if(tip==="Трата")FinanceAPI.spend(p);else FinanceAPI.receive(p);
   syncMoney();
   const L=tip==="Трата"?S.kat_trat:S.kat_dohodov;if(!L.includes(kat))L.push(kat);
@@ -156,11 +156,21 @@ function mini(t,fs,ok,hint){MF={fs,ok};$("sh").innerHTML=`<h2>${t}</h2>${hint?`<
 function miniOk(){const v={};MF.fs.forEach(f=>v[f[0]]=$("m_"+f[0]).value.trim());try{MF.ok(v);save();closeSheet();render();toast("Сохранено")}catch(e){$("m_e").textContent=typeof e==="string"?e:e.message}}
 
 /* ---- форма быстрой операции ---- */
+/* ---- «В план месяца»: к какому месяцу плана отнести платёж (по умолчанию — по дате) ---- */
+const PM_MN=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+function pmOpts(extra){const d=new Date(),r=[["","Авто (по дате операции)"]];
+  for(let k=-1;k<=2;k++){const x=new Date(d.getFullYear(),d.getMonth()+k,1);r.push([x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0"),0]) }
+  if(extra&&!r.some(x=>x[0]===extra))r.push([extra,0]);
+  return r.map(([v,l])=>[v,v?v+" · "+PM_MN[+v.slice(5,7)-1]:l])}
+const pmVal=t=>/^\d{4}-\d{2}/.test(t||"")?t.slice(0,7):"";
+const pmSel=id=>`<label>📋 В план месяца</label><select id="${id}">${pmOpts().map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select>`;
+function planMonth(id){const z=ops().find(x=>x.id===id),o=pmOpts(z.pm);
+  mini("В план месяца",[["pm","Месяц плана",o.map(x=>x[1]),(o.find(x=>x[0]===(z.pm||""))||o[0])[1]]],v=>{FinanceAPI.opPlanMonth(id,pmVal(v.pm));load()},"Деньги не меняются — только в какой месяц плана попадёт эта операция.")}
 function sheet(tip){
   const old=$("f_s")?$("f_s").value:"",oldD=$("f_d")?$("f_d").value:nowS().slice(0,10),w=W();
   let h=`<div class="seg">${["Трата","Доход","Перевод"].map(t=>`<button class="${t===tip?"on":""}" onclick="sheet('${t}')">${t}</button>`).join("")}</div><input id="f_s" inputmode="decimal" placeholder="Сумма" value="${esc(old)}"><label>Дата операции</label><input id="f_d" type="date" value="${esc(oldD)}">`;
   if(tip==="Перевод")h+=`<label>Откуда</label><select id="f_a" onchange="cv()">${opt(w)}</select><label>Куда</label><select id="f_b" onchange="cv()">${opt(w.concat(S.kartki.map(c=>"💳 "+c.nazvanie)),w[1])}</select><input id="f_c" inputmode="decimal" placeholder="Сумма к зачислению" style="display:none">`;
-  else h+=`<label>Кошелёк</label><select id="f_w">${opt(w)}</select><label>Категория</label><select id="f_k">${opt(tip==="Трата"?S.kat_trat:S.kat_dohodov)}</select><div class="mut">Нет нужной? Добавь в «🗂 Разделы» → «🗂 Категории».</div>`;
+  else h+=`<label>Кошелёк</label><select id="f_w">${opt(w)}</select><label>Категория</label><select id="f_k">${opt(tip==="Трата"?S.kat_trat:S.kat_dohodov)}</select>${pmSel("f_pm")}<div class="mut">Нет нужной? Добавь в «🗂 Разделы» → «🗂 Категории».</div>`;
   h+=`<input id="f_n" placeholder="Заметка (необязательно)"><div class="err" id="f_e"></div><button class="bt pri" onclick="submit('${tip}')">Сохранить</button><button class="bt" onclick="closeSheet()">Отмена</button>`;
   $("sh").innerHTML=h;$("ov").classList.add("on");if(tip==="Перевод")cv()}
 function cv(){const a=$("f_a").value,b=$("f_b").value,c=$("f_c");if(cur(a)===cur(b)){c.style.display="none";return}
@@ -168,7 +178,7 @@ function cv(){const a=$("f_a").value,b=$("f_b").value,c=$("f_c");if(cur(a)===cur
 function submit(tip){
   try{const s=num($("f_s").value),n=$("f_n").value.trim(),dt=stampFor($("f_d").value);
     if(tip==="Перевод")transfer($("f_a").value,$("f_b").value,s,num($("f_c").value),n,dt);
-    else addOp(tip,$("f_w").value,$("f_k").value,s,n,dt);
+    else addOp(tip,$("f_w").value,$("f_k").value,s,n,dt,$("f_pm").value);
     closeSheet();render();toast("Сохранено")
   }catch(e){$("f_e").textContent=typeof e==="string"?e:e.message}}
 
@@ -177,13 +187,14 @@ function row(z){
   const ic={"Трата":"➖","Доход":"➕","Перевод":"🔄","Конвертация":"🔄","Кредитка":"💳","Долг":"🤝","Кредит":"🏛","Ломбард":"🥇","Цель":"🎯"}[z.tip]||"•";
   const kp=(z.tip==="Кредитка"&&(z.napr==="покупка"||z.napr==="проценты"))||((z.tip==="Кредит"||z.tip==="Ломбард")&&z.napr==="платёж"),neg=z.tip==="Трата"||kp;
   const sg=neg?"-":z.tip==="Доход"?"+":"",c=neg?"r":z.tip==="Доход"?"g":"",w=z.koshel||"",ttl=z.kat||(z.kuda?w+" → "+z.kuda:z.tip);
-  return `<div class="row" onclick="opMenu(${z.id})"><div>${ic} ${esc(ttl)}<div class="mut">${esc((z.data||"").slice(0,16))} · ${esc(w)}${z.zametka?" · "+esc(z.zametka):""}</div></div><b class="${c}">${sg}${fmt(z.summa)} ${esc(SY[cur(w)]||"")}</b></div>`}
+  return `<div class="row" onclick="opMenu(${z.id})"><div>${ic} ${esc(ttl)}<div class="mut">${esc((z.data||"").slice(0,16))} · ${esc(w)}${z.zametka?" · "+esc(z.zametka):""}${z.pm?" · 📋 "+esc(z.pm):""}</div></div><b class="${c}">${sg}${fmt(z.summa)} ${esc(SY[cur(w)]||"")}</b></div>`}
 function opMenu(id){const z=ops().find(x=>x.id===id),it=[];if(!z)return;
   if(z.ref){toast(z.ref.t==="salary"?"Создана в «Учёте» — отменяйте там":"Создана в «Скутере» — меняйте там");return}
   if(z.tip==="Трата"||z.tip==="Доход")it.push(["✏️ Изменить",()=>editOp(id)]);
   if(["Трата","Доход","Перевод","Корректировка"].includes(z.tip))it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию?",()=>undo(id))]);
   if(z.tip==="Кредитка")it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию?",()=>undoCard(id))]);
   if(["Кредит","Ломбард","Долг","Цель","Конвертация"].includes(z.tip))it.push(["↩️ Отменить операцию",()=>ask("Отменить эту операцию? Деньги и остаток вернутся.",()=>undo(id))]);
+  it.push(["📋 В план месяца…",()=>planMonth(id)]);
   if(it.length)mm(esc(z.tip)+" · "+fmt(z.summa),it)}
 function editOp(id){const z=ops().find(x=>x.id===id),L=z.tip==="Трата"?S.kat_trat:S.kat_dohodov;
   mini("Изменить",[["k","Категория",L.includes(z.kat)?L:L.concat(z.kat),z.kat],["s","Сумма",null,z.summa,1],["d","Дата",null,(z.data||"").slice(0,10),0,"date"],["w","Кошелёк",W(),z.koshel],["n","Заметка",null,z.zametka||""]],v=>{FinanceAPI.opEdit({id,category:v.k,amount:v.s,date:v.d,wallet:v.w,note:v.n});load()})}
@@ -371,7 +382,7 @@ function cardNew(){mini("Новая кредитная карта",[["n","Наз
   if(!v.n)throw"Укажи название";if(S.kartki.some(c=>c.nazvanie===v.n))throw"Такая карта уже есть";if(y<0||y>31)throw"День от 1 до 31";
   S.kartki.push({id:mid(S.kartki),nazvanie:v.n,limit:l,dolg:d,stavka:r,den:y,min:m,koshel:v.w,posl:""})})}
 function cardBuy(id){const c=S.kartki.find(x=>x.id===id);
-  mini("Покупка: "+esc(c.nazvanie),[["k","Категория",S.kat_trat],["s","Сумма",null,"",1],["n","Заметка"]],v=>{FinanceAPI.cardBuy({cardId:id,category:v.k,amount:v.s,note:v.n});load()},"Доступно: "+fmt(Math.max(0,r2(c.limit-c.dolg))))}
+  mini("Покупка: "+esc(c.nazvanie),[["k","Категория",S.kat_trat],["s","Сумма",null,"",1],["n","Заметка"],["pm","В план месяца",pmOpts().map(x=>x[1]),pmOpts()[0][1]]],v=>{FinanceAPI.cardBuy({cardId:id,category:v.k,amount:v.s,note:v.n,pm:pmVal(v.pm)});load()},"Доступно: "+fmt(Math.max(0,r2(c.limit-c.dolg))))}
 function cardPay(id){const c=S.kartki.find(x=>x.id===id),ws=WM();if(!ws.length)return toast("Нет кошелька в леях");
   mini("Платёж по карте: "+esc(c.nazvanie),[["w","Откуда платим",ws,c.koshel],["s","Сумма (долг "+fmt(c.dolg)+")",null,c.min&&c.min<=c.dolg?c.min:c.dolg,1]],v=>{FinanceAPI.payCard({wallet:v.w,cardId:id,amount:v.s});load()})}
 function cardFee(id){const c=S.kartki.find(x=>x.id===id);
