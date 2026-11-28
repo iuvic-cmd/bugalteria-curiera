@@ -221,6 +221,7 @@ details.tree.d>summary{background:var(--subtle-bg);color:var(--accent);font-weig
         <div class="form-group"><label for="salDate">📅 Дата:</label><input type="date" id="salDate" class="form-control"/></div>
         <div class="form-group"><label for="salWallet">👛 Кошелёк:</label><select id="salWallet" class="form-control"></select></div>
       </div>
+      <div class="form-group"><label for="salNote">📝 Комментарий (необязательно):</label><input type="text" id="salNote" class="form-control" placeholder="Например: аванс, нал, часть"/></div>
       <button onclick="saveSalary()" class="btn btn-green">💵 Записать получение</button>
       <button id="salCloseBtn" onclick="toggleSalaryClosed()" class="btn btn-gray" style="margin-top:8px"></button>
       <div id="salList" style="margin-top:10px"></div>
@@ -586,7 +587,7 @@ function renderSalary(){
   const w=State.getWallets()||{},vl=AppStorage.get("valyuty",{})||{},sel=$("salWallet"),prev=sel.value;
   sel.innerHTML=Object.keys(w).filter(n=>(vl[n]||"MDL")==="MDL").map(n=>`<option value="${esc(n)}">${esc(n)} (${UI.fmt(w[n])} лей)</option>`).join("");
   if(prev&&[...sel.options].some(o=>o.value===prev))sel.value=prev;
-  $("salList").innerHTML=rows.length?rows.map(o=>`<div class="log-row" style="padding:6px 0;border-bottom:1px solid var(--divider)"><span>${esc(String(o.data||"").slice(0,10).split("-").reverse().join("."))} · ${esc(o.koshel||"")}</span><span><b class="pos">+${UI.fmt(o.summa)}</b> <button class="log-del" data-id="${esc(o.id)}" onclick="deleteSalary(this.dataset.id)">🗑</button></span></div>`).join(""):empty("Получений за этот месяц нет");
+  $("salList").innerHTML=rows.length?rows.map(o=>`<div class="log-row" style="padding:6px 0;border-bottom:1px solid var(--divider)"><span>${esc(String(o.data||"").slice(0,10).split("-").reverse().join("."))} · ${esc(o.koshel||"")}${(o.zametka||"").includes(" · ")?" · "+esc(o.zametka.slice(o.zametka.indexOf(" · ")+3)):""}</span><span><b class="pos">+${UI.fmt(o.summa)}</b> <button class="log-del" data-id="${esc(o.id)}" onclick="deleteSalary(this.dataset.id)">🗑</button></span></div>`).join(""):empty("Получений за этот месяц нет");
 }
 function saveSalary(){
   if(!guardAction("saveSalary"))return;
@@ -597,8 +598,8 @@ function saveSalary(){
     if(!(amt>0)){showAlertDialog("Весь заработок за месяц уже получен. Введите сумму вручную, если это аванс.");return}
     const wallet=$("salWallet").value;
     if(!wallet)throw new Error("Кошелёк не выбран");
-    FinanceAPI.receive({date:$("salDate").value||getLocalDateStr(),wallet,amount:amt,category:"Зарплата",note:`Зарплата за ${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`,ref:{t:"salary",ym},addCategory:true});
-    $("salAmount").value="";$("salDate").value=getLocalDateStr();
+    FinanceAPI.receive({date:$("salDate").value||getLocalDateStr(),wallet,amount:amt,category:"Зарплата",note:`Зарплата за ${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`+($("salNote").value.trim()?" · "+$("salNote").value.trim():""),ref:{t:"salary",ym},addCategory:true});
+    $("salAmount").value="";$("salNote").value="";$("salDate").value=getLocalDateStr();
     renderSalary();Notify.show(`✅ Получено ${UI.fmt(amt)} лей`);
   }catch(e){Notify.error(e.message)}
 }
