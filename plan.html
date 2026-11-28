@@ -164,11 +164,12 @@
       <option value="card">💳 Платежи по кредиткам (из «Финансов»)</option>
       <option value="cat">🗂 Траты по категории</option>
       <option value="debt">🤝 Возврат долга человеку</option>
+      <option value="inc">💵 Доходы по категории (из «Финансов»)</option>
     </select>
     <div id="tCatWrap" style="display:none">
       <input id="tCat" list="catList" placeholder="Категория или имя, например Топливо">
       <datalist id="catList"></datalist>
-      <div class="hint">Берутся все траты за месяц, в названии категории которых есть этот текст.</div>
+      <div class="hint">Берутся все операции за месяц, в названии категории которых есть этот текст. Можно добавить слово из заметки через «|», например: электричество|ноябрь. Платёж другого месяца — в «Финансах» нажмите на операцию → «📋 В план месяца».</div>
     </div>
     <div id="tFactWrap">
       <label>Факт (лей)</label>
@@ -327,7 +328,7 @@
   const planOps = () => Calc.planOps();
   const autoFact = (src, ym) => Calc.autoFact(src, ym, OPS);
   const factOf = (t, ym) => isAuto(t) ? Math.round(autoFact(t.src, ym || (P && P.ym) || curYm())) : num(t.fact);
-  const srcLabel = s => s === "lombard" ? "ломбард" : s === "credit" ? "кредиты" : s === "card" ? "кредитки" : s.startsWith("credit:") ? "кредит" : s.startsWith("card:") ? "кредитка" : s.startsWith("reg:") ? "регулярный" : s.startsWith("cat:") ? s.slice(4) : s.startsWith("debt:") ? "долг: " + s.slice(5) : "";
+  const srcLabel = s => s === "lombard" ? "ломбард" : s === "credit" ? "кредиты" : s === "card" ? "кредитки" : s.startsWith("credit:") ? "кредит" : s.startsWith("card:") ? "кредитка" : s.startsWith("reg:") ? "регулярный" : s.startsWith("cat:") ? s.slice(4) : s.startsWith("debt:") ? "долг: " + s.slice(5) : s.startsWith("inc:") ? "доход: " + s.slice(4) : "";
   function detectSrc(title) {
     const l = String(title).toLowerCase();
     if (l.includes("ломбард")) return "lombard";
@@ -619,8 +620,8 @@
   }
   function srcChanged() {
     const v = $("tSrc").value;
-    $("tCatWrap").style.display = v === "cat" || v === "debt" ? "block" : "none";
-    $("tCat").placeholder = v === "debt" ? "Имя из долгов, например Иван" : "Категория, например Топливо";
+    $("tCatWrap").style.display = v === "cat" || v === "debt" || v === "inc" ? "block" : "none";
+    $("tCat").placeholder = v === "debt" ? "Имя из долгов, например Иван" : v === "inc" ? "Категория дохода, например Зарплата" : "Категория, например Топливо";
     $("tFactWrap").style.display = v === "manual" ? "block" : "none";
   }
   function openTaskModal(id, secKey) {
@@ -637,8 +638,8 @@
     $("tFact").value = f ? (f.task.fact || "") : "";
     $("tOff").checked = !!(f && f.task.offPot);
     const src = f && f.task.src ? f.task.src : "manual";
-    $("tSrc").value = src.startsWith("cat:") ? "cat" : src.startsWith("debt:") ? "debt" : src;
-    $("tCat").value = src.startsWith("cat:") || src.startsWith("debt:") ? src.slice(src.indexOf(":") + 1) : "";
+    $("tSrc").value = src.startsWith("cat:") ? "cat" : src.startsWith("debt:") ? "debt" : src.startsWith("inc:") ? "inc" : src;
+    $("tCat").value = src.startsWith("cat:") || src.startsWith("debt:") || src.startsWith("inc:") ? src.slice(src.indexOf(":") + 1) : "";
     srcChanged();
     fillSections("tSection", f ? f.sec.key : (secKey || P.sections[0].key));
     $("tErr").textContent = "";
@@ -651,9 +652,9 @@
     const title = $("tTitle").value.trim();
     if (!title) { $("tErr").textContent = "Введите заголовок"; return; }
     let src = $("tSrc").value;
-    if (src === "cat" || src === "debt") {
+    if (src === "cat" || src === "debt" || src === "inc") {
       const c = $("tCat").value.trim();
-      if (!c) { $("tErr").textContent = src === "cat" ? "Укажите категорию" : "Укажите имя"; return; }
+      if (!c) { $("tErr").textContent = src === "debt" ? "Укажите имя" : "Укажите категорию"; return; }
       src = src + ":" + c;
     }
     const data = {
