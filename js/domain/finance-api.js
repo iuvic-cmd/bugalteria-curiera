@@ -154,12 +154,12 @@
             State.setWallets(ws); AppStorage.set("kartki", cards);
             return this._rec("Кредитка", s, wallet, { date, kat: c.nazvanie, napr: "платёж", cid: c.id, pp, zametka: note, pm: pmOk(pm) });
         },
-        cardBuy({ date, cardId, category, amount, note, pm }) {
+        cardBuy({ date, cardId, category, amount, note, pm, ref }) {
             const s = this._pos(amount), { cards, c } = this._card(cardId), av = UI.r2(c.limit - c.dolg);
             if (s > av) throw new Error("Превышен лимит. Доступно: " + UI.fmt(Math.max(0, av)));
             c.dolg = UI.r2(c.dolg + s); bump("traty", category, s);
             AppStorage.set("kartki", cards);
-            return this._rec("Кредитка", s, c.nazvanie, { date, kat: category, napr: "покупка", cid: c.id, zametka: note, pm: pmOk(pm) });
+            return this._rec("Кредитка", s, c.nazvanie, { date, kat: category, napr: "покупка", cid: c.id, zametka: note, pm: pmOk(pm), ref });
         },
         cardFee({ date, cardId, amount, note }) {
             const s = this._pos(amount), { cards, c } = this._card(cardId);
